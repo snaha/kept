@@ -1,9 +1,14 @@
 import type { Child } from 'subsonic-api';
 import { coverUrl, ok, session, streamUrl } from './api.svelte';
-import { moveTo, shuffle } from './shuffle';
+import { grid as shown } from './library.svelte';
+import { moveTo, retire, shuffle } from './shuffle';
+
+// the play order is kept across restarts: reset to in order unasked, next would stop at the end of every album again
+const ORDERS = ['normal', 'shuffle', 'random'] as const;
+const saved = localStorage.getItem('order') as Order;
 
 export const player = $state({
-  queue: [] as Child[], index: -1, playing: false, time: 0, duration: 0, order: 'normal' as Order, queueOpen: false, topHidden: false, visOpen: false, view: '' as '' | 'share' | 'settings', viewFrom: 'bottom' as 'bottom' | 'right',
+  queue: [] as Child[], index: -1, playing: false, time: 0, duration: 0, order: ORDERS.includes(saved) ? saved : 'normal', queueOpen: false, topHidden: false, visOpen: false, view: '' as '' | 'share' | 'settings', viewFrom: 'bottom' as 'bottom' | 'right',
   get song() { return this.queue[this.index] as Child | undefined; },
 });
 
@@ -30,12 +35,13 @@ audio.addEventListener('ended', next);
 // random: the playlist is every song the grid shows, walked through a shuffled index of song numbers (see Grid);
 // the queue is then the history of songs played this cycle, queue[i] being the song at position i of the index.
 // Next and prev move the cursor; at the end of an album playback stops, random starts a new cycle
-export type Order = 'normal' | 'shuffle' | 'random';
+export type Order = (typeof ORDERS)[number];
 // the songs the grid shows, numbered 0..count-1 across its tiles; `key` changes when the grid's contents do
 export type Grid = { count: number; key: string; find(albumId: string): number; song(n: number): Promise<Child | undefined> };
 
 let perm = new Uint32Array(0), cursor = -1, gridKey = '';
-let grid: (() => Grid) | undefined;
+// the grid's songs, known from the start so an order restored as random can draw from them
+let grid: (() => Grid) | undefined = () => shown();
 
 function start(i: number) { player.index = i; load(); }
 
@@ -59,6 +65,7 @@ export async function setOrder(order: Order, source: () => Grid) {
   if (order === player.order) return;
   const was = player.order, cur = player.song;
   player.order = order; grid = source;
+  localStorage.setItem('order', order);
   if (order === 'random') {
     gridKey = ''; // the index is built on the first draw
     player.queue = cur ? [cur] : []; cursor = player.index = player.queue.length - 1;
@@ -86,10 +93,15 @@ async function nextRandom() {
     player.queue = cur ? [cur] : []; cursor = player.queue.length - 1; player.index = cursor;
   }
   if (cursor + 1 >= perm.length) return; // a single song on the grid
-  const s = await g.song(perm[cursor + 1]);
-  if (!s) return audio.pause();
-  player.queue.push(s); cursor++;
-  start(cursor);
+  // a song that cannot be had (a failed request, an album without songs) is retired to the end of the index and the
+  // next one is tried, a few times over, so a single failure does not leave next doing nothing
+  for (let tries = 0; tries < 5 && cursor + 1 < perm.length; tries++) {
+    const at = cursor + 1, s = await g.song(perm[at]).catch(() => undefined);
+    if (cursor + 1 !== at) return; // another next got there meanwhile
+    if (s) { player.queue.push(s); cursor++; return start(cursor); }
+    retire(perm, at);
+  }
+  audio.pause();
 }
 
 function load() {

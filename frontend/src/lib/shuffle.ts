@@ -18,6 +18,14 @@ export function moveTo(p: Uint32Array, song: number, at: number) {
   p[i] = p[at]; p[at] = song;
 }
 
+// a song that cannot be had goes to the end of the order and the ones after it move up: the next try at `at` is a
+// different song, and a run of failures walks on through the rest instead of swapping the same two back and forth
+export function retire(p: Uint32Array, at: number) {
+  if (at < 0 || at >= p.length) return;
+  const song = p[at];
+  p.copyWithin(at, at + 1); p[p.length - 1] = song;
+}
+
 // self-check: node --experimental-strip-types -e "import('./src/lib/shuffle.ts').then(m => m.check())"
 export function check() {
   const isPerm = (p: Uint32Array) => new Set(p).size === p.length && p.every((v) => v < p.length);
@@ -31,6 +39,10 @@ export function check() {
     const r = p.slice(), song = k % n, at = Math.min(n - 1, k % 7);
     moveTo(r, song, at);
     console.assert(isPerm(r) && r[at] === song, 'a hand pick keeps the permutation');
+    // failures at `at`, retired one after the other, try every remaining song once before any comes round again
+    const f = p.slice(), seen: number[] = [];
+    for (let t = at; t < n; t++) { seen.push(f[at]); retire(f, at); }
+    console.assert(isPerm(f) && new Set(seen).size === n - at, 'retiring failures reaches every remaining song');
   }
   const big = shuffle(300000);
   console.assert(isPerm(big), 'large permutation');
