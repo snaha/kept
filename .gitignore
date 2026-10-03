@@ -18,3 +18,7 @@ navidrome/data/
 
 # Extracted local preview builds
 .local-builds/
+
+# tagsmith dependencies and dry-run state
+tagsmith/node_modules/
+tagsmith/work/
