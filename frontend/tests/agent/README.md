@@ -217,3 +217,29 @@ The general regression rerun at `.audit-results/2026-10-03T13-59-11-387Z/` remai
 blocked by its stale `.tile-actions` selector. Native Mac behavior, live Spotify,
 physical touch and phone FPS were not exercised. No new final installer had been
 published at this validation checkpoint.
+
+## Cover flow, Panels and Orbit
+
+With the isolated synthetic fixture running, use:
+
+```sh
+pnpm --dir frontend audit:artwork-explorers
+```
+
+The runner checks all three modes at 1920×1080, 1440×900, 1024×768 and 390×844,
+then WebGL2 and simulated reduced motion. Set `MUSIC_AUDIT_PORT=4192` on both
+`audit:serve` and this command to avoid a busy default port; `MUSIC_AUDIT_URL`
+overrides the fixture URL. `MUSIC_AUDIT_SIZES='[[390,844]]'` narrows the size matrix
+but retains the final 1440×900 fallback checks. Browser configuration is shared
+with the setup above. The isolated `music-artwork-explorers` session resets its
+viewport and closes automatically; stop the fixture separately.
+
+The 2026-10-03 run in
+`.audit-results/artwork-explorers-2026-10-03T14-48-33-985Z/` passed, and all 27
+captures received personal inspection plus a fresh reviewer's **ship** disposition.
+That visual verdict is separate from the runner's default pending marker. Five
+additional functional edge checks also passed. Synthetic results do not certify
+native Mac rendering, live Spotify/audio, real cover CORS, physical touch or phone
+FPS. The general regression runner's stale `.tile-actions` blocker remains.
+See `frontend/ARTWORK-EXPLORERS.md` for controls, resource bounds, exact evidence,
+remaining test limits and the local desktop launch command.

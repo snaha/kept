@@ -11,7 +11,8 @@
     "audit:serve": "pnpm build && node tests/agent/server.mjs",
     "audit:regressions": "node tests/agent/run.mjs",
     "audit:chronocity": "node tests/agent/chronocity.mjs",
-    "audit:build-info": "node tests/agent/build-info.mjs"
+    "audit:build-info": "node tests/agent/build-info.mjs",
+    "audit:artwork-explorers": "node tests/agent/artwork-explorers.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

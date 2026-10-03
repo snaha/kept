@@ -1,12 +1,12 @@
 {
   "jose/3d-space": {
-    "title": "Chronocity 3D artwork explorer",
-    "summary": "Explore your album covers in a cinematic industrial world.",
+    "title": "3D album artwork explorers",
+    "summary": "Explore your album covers in Chronocity, Cover flow, Panels and Orbit.",
     "highlights": [
-      "Fly between original album artworks in three dimensions.",
-      "Approach a playlist to unfold its albums into an artwork gallery.",
+      "Browse original covers on a folded shelf, through an angled gallery or around a spiral archive.",
+      "Expand playlists into collections of their actual album artworks.",
       "Try cinematic camera tours and optional holographic artwork."
     ],
-    "tryIt": "Open Albums or Playlists and choose Chronocity. Select Cinematic for a camera tour; move or press Escape to take control."
+    "tryIt": "Open Albums or Playlists and choose Cover flow, Panels or Orbit beside Chronocity. Scroll or drag to browse, use the year selector to jump, and choose Explore artwork on a playlist. Chronocity also offers Cinematic camera tours."
   }
 }
