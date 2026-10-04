@@ -40,6 +40,7 @@ const commands: Record<string, () => Promise<void>> = {
     const files = inv.folders.reduce((n, f) => n + f.files.length, 0);
     console.log(`${inv.folders.length} folders, ${files} files in ${Math.round((Date.now() - t0) / 1000)}s -> ${inventoryFile}`);
     console.log(Object.entries(byClass).map(([c, n]) => `${c} ${n}`).join(', '));
+    console.log(`${inv.folders.filter((f) => f.identified).length} folders already carry MusicBrainz release ids`);
     const flagged = inv.folders.filter((f) => f.findings.length);
     if (flagged.length) {
       console.log(`\n${flagged.length} folders with findings:`);
