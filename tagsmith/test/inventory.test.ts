@@ -6,9 +6,10 @@ import { inventory, type Inventory } from '../src/inventory.ts';
 import { emptyTags, type TagReader } from '../src/tags.ts';
 
 /** tags by file name; files not listed are untagged */
+const MBID = 'c8c5f1a0-6d5e-4b4e-9d4e-0f1c2b3a4d5e';
 const TAGS: Record<string, Partial<ReturnType<typeof emptyTags>> & { pictures?: number[] }> = {
-  '01 - Hands Up.mp3': { artist: 'Black Eyed Peas', album: 'Elephunk', title: 'Hands Up', pictures: [0] },
-  '02 - Labor Day.mp3': { artist: 'Black Eyed Peas', album: 'Elephunk', title: 'Labor Day' },
+  '01 - Hands Up.mp3': { artist: 'Black Eyed Peas', album: 'Elephunk', title: 'Hands Up', pictures: [0], mb_albumid: MBID },
+  '02 - Labor Day.mp3': { artist: 'Black Eyed Peas', album: 'Elephunk', title: 'Labor Day', mb_albumid: MBID },
   '03 - Anxiety.mp3': { artist: 'Black Eyed Peas', album: 'Elephunk', title: 'Anxiety' },
   'beatles1.mp3': { artist: 'The Beatles', album: '1', title: 'Help!' },
   'beatles2.mp3': { artist: 'The Beatles', album: '1', title: 'Yesterday' },
@@ -21,7 +22,7 @@ const TAGS: Record<string, Partial<ReturnType<typeof emptyTags>> & { pictures?: 
 const read: TagReader = async (path) => {
   const t = TAGS[basename(path)] ?? {};
   const { pictures = [], ...tags } = t;
-  return { path, tags: { ...emptyTags(), ...tags }, duration: 0, pictures };
+  return { path, tags: { ...emptyTags(), ...tags }, extra: {}, raw: {}, duration: 0, pictures };
 };
 
 let root: string;
@@ -56,7 +57,12 @@ describe('inventory', () => {
     expect(byName('Guitar Riffs').class).toBe('multi');
     expect(byName('Fluke - Risotto').class).toBe('untagged');
     expect(byName('Loose').class).toBe('singles');
-    expect(byName('Elephunk').stats).toMatchObject({ files: 3, albums: 1, artists: 1, topArtistShare: 1, numberedNames: 3 });
+    expect(byName('Elephunk').stats).toMatchObject({ files: 3, albums: 1, artists: 1, topArtistShare: 1, numberedNames: 3, identified: 2 });
+  });
+
+  it('marks folders whose files carry MusicBrainz release ids as identified', () => {
+    expect(byName('Elephunk').identified).toBe(true);
+    expect(byName('Guitar Riffs').identified).toBe(false);
   });
 
   it('reports findings without the network', () => {

@@ -32,7 +32,11 @@ export type Folder = {
     untitled: number;
     noArtist: number;
     numberedNames: number;
+    /** files carrying a MusicBrainz release id */
+    identified: number;
   };
+  /** most files carry a MusicBrainz release id: identify can skip the folder and covers can go by release id */
+  identified: boolean;
   findings: string[];
 };
 
@@ -98,6 +102,7 @@ export function classify(dir: string, files: FileInfo[], dump = DUMP): { class: 
     untitled: files.filter((f) => !known(f.tags.title)).length,
     noArtist: files.filter((f) => !known(f.tags.artist)).length,
     numberedNames: files.filter((f) => /^\s*\(?\d{1,3}\)?[\s._)-]/.test(basename(f.path))).length,
+    identified: files.filter((f) => f.tags.mb_albumid).length,
   };
   const albumArtist = files.find((f) => known(f.tags.albumartist))?.tags.albumartist;
   let cls: FolderClass;
@@ -139,14 +144,14 @@ export async function inventory(roots: string[], opts: InventoryOptions = {}): P
         files.push(await read(join(dir, name)));
       } catch {
         // a corrupt header counts as an untagged file; the name is reported so it can be fixed by hand
-        files.push({ path: join(dir, name), tags: emptyTags(), duration: 0, pictures: [] });
+        files.push({ path: join(dir, name), tags: emptyTags(), extra: {}, raw: {}, duration: 0, pictures: [] });
         unreadable.push(name);
       }
     }
     const { class: cls, stats } = classify(dir, files, opts.dump);
     const notes = await findings(dir, cls, files, images);
     if (unreadable.length) notes.push(`${unreadable.length} files could not be read: ${unreadable.slice(0, 3).join(', ')}`);
-    folders.push({ dir, class: cls, files, images, stats, findings: notes });
+    folders.push({ dir, class: cls, files, images, stats, identified: stats.identified / files.length >= 0.6, findings: notes });
     opts.onProgress?.(i + 1, dir);
   }
   return { roots, scanned: new Date().toISOString(), folders };

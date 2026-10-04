@@ -14,7 +14,11 @@ Runs on Node 22 without a build step; `pnpm check` type-checks and `pnpm test` r
 ## Inventory
 
 Every folder that holds audio becomes one entry with its files' tags, duration and embedded picture sizes, a
-class, stats and findings. Classes: `album` (one owner), `disc` (a `CD n` folder of a set), `multi` (several
+class, stats and findings. The planned fields (title, artist, album, album artist, track, disc, year, genre,
+compilation, and the MusicBrainz recording, release and release-group ids) are strings under `tags`; every
+other tag music-metadata understood is kept under `extra`, and the file's raw frames by format under `raw`,
+minus pictures and other binary values, so nothing is lost when a later stage learns to use them. A folder
+whose files mostly carry a MusicBrainz release id is marked `identified`. Classes: `album` (one owner), `disc` (a `CD n` folder of a set), `multi` (several
 albums in one flat folder), `compilation` (no artist holds 60% of the files), `dump` (more than 60 files),
 `singles` (one or two files), `untagged` (most files carry no album and no artist). Findings need no network:
 a cover that would show on every album of a flat folder, zero-byte picture frames, image files that are not

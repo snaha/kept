@@ -4,11 +4,11 @@ import { classify } from '../src/inventory.ts';
 import { albumOfFolder, plan, planFiles, planFolder } from '../src/rules.ts';
 import { emptyTags, type FileInfo, type Tags } from '../src/tags.ts';
 
-const file = (dir: string, name: string, tags: Partial<Tags> = {}): FileInfo => ({ path: `${dir}/${name}`, tags: { ...emptyTags(), ...tags }, duration: 0, pictures: [] });
+const file = (dir: string, name: string, tags: Partial<Tags> = {}): FileInfo => ({ path: `${dir}/${name}`, tags: { ...emptyTags(), ...tags }, extra: {}, raw: {}, duration: 0, pictures: [] });
 
 const folder = (dir: string, files: FileInfo[], images: string[] = []): Folder => {
   const { class: cls, stats } = classify(dir, files);
-  return { dir, class: cls, files, images, stats, findings: [] };
+  return { dir, class: cls, files, images, stats, identified: false, findings: [] };
 };
 
 describe('albumOfFolder', () => {
@@ -124,6 +124,18 @@ describe('planFiles', () => {
       file(dir, '03-Helter.mp3', { artist: 'Beatles', album: 'ANTHOLOGY 3 CD1', title: 'Helter Skelter' }),
     ]);
     expect(planFiles(f)[0].after).toMatchObject({ album: 'ANTHOLOGY 3', disc: '1', track: '1', title: 'A Beginning' });
+  });
+
+  it('carries MusicBrainz ids through untouched', () => {
+    const dir = '/m/Beatles/Love songs';
+    const f = folder(dir, [
+      file(dir, '01-Yesterday.mp3', { artist: 'Beatles', album: 'Love songs', title: 'Yesterday', mb_albumid: 'a1', mb_recordingid: 'r1' }),
+      file(dir, '02-Girl.mp3', { artist: 'Beatles', album: 'Love songs', title: 'Girl', mb_albumid: 'a1', mb_recordingid: 'r2' }),
+      file(dir, '03-Michelle.mp3', { artist: 'Beatles', album: 'Love songs', title: 'Michelle', mb_albumid: 'a1', mb_recordingid: 'r3' }),
+    ]);
+    const d = planFiles(f);
+    expect(d[0].changes).toEqual(['albumartist', 'track']);
+    expect(d[0].after).toMatchObject({ mb_albumid: 'a1', mb_recordingid: 'r1' });
   });
 
   it('numbers disc tracks from a 102- prefix', () => {
