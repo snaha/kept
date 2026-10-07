@@ -12,6 +12,13 @@ This project uses **pnpm** (not npm or yarn). Always use `pnpm` commands:
 ## Code Style
 
 - Prefer `const` over `let` whenever the variable is not reassigned
+- **No semicolons**
+- **Never use `null`** — use `undefined` (exception: external library APIs)
+- **Never use `any`** — use proper types, generics, `unknown`
+- **Never use dynamic imports** — static imports at top of file only
+- **No magic numbers** — use SCREAMING_SNAKE_CASE constants (0, 1, -1, 2 excepted)
+- **Omit file extensions** in imports the frontend bundler resolves (`frontend/src`). Desktop source, workers and scripts run as Node ESM, where relative imports keep their `.js` extension
+- **kebab-case** for all file and directory names
 
 ## Commits
 
@@ -20,6 +27,12 @@ This project uses **pnpm** (not npm or yarn). Always use `pnpm` commands:
 - Subject only. Add a body just when the _why_ isn't obvious from the diff, and keep
   it to a few wrapped lines.
 - No `Co-Authored-By`, no `Generated with Claude Code`, no session links, no emoji.
+- Keep PR titles and descriptions concise.
+- Omit automated-testing details from PR descriptions — TDD process, test counts, or "checks pass" statements. CI runs the full suite on every PR, so these add nothing. Manual or visual checks CI cannot do (e.g. "verified in the browser against the Figma frames") are worth a sentence.
+- Omit the issue number from branch names and titles
+- When a PR resolves an issue, reference it with a closing keyword (e.g. `Closes #53`) so GitHub closes the issue automatically on merge.
+- The repo deletes the head branch automatically when a PR is merged, so don't pass `--delete-branch` or delete branches by hand. Deleting a branch that another open PR is stacked on auto-closes that PR, so let the merge do it.
+- Keep a **linear history**: rebase onto `main` to update a branch or resolve a conflict — never merge `main` into the branch. Rebasing a branch that is already pushed ends in `git push --force-with-lease`.
 
 ## Modules
 
