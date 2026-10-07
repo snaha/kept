@@ -386,6 +386,26 @@ describe('review regressions', () => {
       expect(document.activeElement).toBe(input);
     } finally { dialog.close(); dialog.remove(); lower.remove(); upper.remove(); }
   });
+  it('mounts a bounded window of a large library and warms covers through one deduplicated pool', async () => {
+    class TestImage extends EventTarget {
+      static started: TestImage[] = []; onload: (() => void) | null = null; onerror: (() => void) | null = null; #src = '';
+      get src() { return this.#src; } set src(value: string) { this.#src = value; if (value) TestImage.started.push(this); }
+    }
+    vi.stubGlobal('Image', TestImage);
+    const many = (n: number) => Array.from({ length: n }, (_, i) => ({ ...tile, id: `local:album:${i}`, rawId: String(i), title: `Album ${i}`, cover: `/cover-${i}.png` }));
+    const view = render(Grid, { tiles: many(5000), onpick: () => {}, hidden: false }); await tick();
+    expect(document.querySelectorAll('.tile-wrap').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.tile-wrap').length).toBeLessThan(400);
+    expect(TestImage.started.length).toBe(6);
+    await view.rerender({ tiles: many(4000) }); await tick();
+    await view.rerender({ tiles: many(3000) }); await tick();
+    expect(TestImage.started.length).toBe(6); // refreshed lists reuse the pool instead of starting six more loads each
+    TestImage.started[0].onload!(); await tick();
+    expect(TestImage.started.length).toBe(7);
+    expect(new Set(TestImage.started.map(image => image.src)).size).toBe(7);
+    await view.unmount(); await tick();
+    expect(TestImage.started.slice(1).every(image => image.src === '')).toBe(true); // unmount aborts the loads still in flight
+  });
   it('lets the real Settings modal own focus above Queue and restores the queue control', async () => {
     play([track]);
     render(Queue, { onclose: () => {}, palette: '', options: createRawSnippet(() => ({ render: () => '<div></div>' })) }); await tick();
