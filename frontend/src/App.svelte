@@ -125,6 +125,7 @@
         <div><dt><kbd>Space</kbd></dt><dd>Play / pause</dd></div>
         <div><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next track</dd></div>
         <div><dt><kbd>/</kbd> <kbd>⌘ / Ctrl K</kbd></dt><dd>Search library</dd></div>
+        <div><dt><kbd>L</kbd> <kbd>⌘ / Ctrl L</kbd></dt><dd>Show the playing album</dd></div>
         <div><dt><kbd>Q</kbd></dt><dd>Open / close player</dd></div>
         <div><dt><kbd>S</kbd></dt><dd>Settings</dd></div>
         <div><dt><kbd>V</kbd> <kbd>⌘ / Ctrl T</kbd></dt><dd>Open / close the visualizer</dd></div>
