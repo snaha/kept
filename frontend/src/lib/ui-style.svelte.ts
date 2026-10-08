@@ -9,4 +9,4 @@ export function startUiStyle() { return $effect.root(() => { $effect(() => {
 }); }); }
 
 // Transient toolbar mode; theme preference alone is persisted.
-export const toolbar = $state({ selecting: false, mode: 'library' as 'library' | 'filters' | 'layout' | 'look' | 'theme' });
+export const toolbar = $state({ selecting: false, mode: 'library' as 'library' | 'filters' | 'layout' | 'look' | '3d' | 'theme' });
