@@ -14,9 +14,12 @@
 </button>
 <style>
   button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 16px; border: 0; border-radius: var(--ui-radius, 4px); background: var(--play-accent, var(--ui-text)); color: var(--play-bar, var(--ui-surface)); font: inherit; cursor: pointer; }
+  button.compact { width: 36px; height: 36px; min-height: 36px; padding: 0; background: #101010e6; color: #fff; border-radius: 5px; }
+  /* Full-size album pill per Figma: 36px tall, 10px radius, 16px icon, medium 14px label. */
+  button:not(.compact) { gap: 6px; height: 36px; min-height: 36px; padding: 8px 10px; border-radius: 10px; font: 500 14px/20px var(--ui-font, system-ui); }
+  button:not(.compact) :global(svg), button:not(.compact) svg.loading { width: 16px; height: 16px; }
   button:hover { filter: brightness(1.15); }
   button:focus-visible { outline: 2px solid var(--play-accent, var(--ui-text)); outline-offset: 3px; }
-  button.compact { width: 36px; height: 36px; min-height: 36px; padding: 0; background: #101010e6; color: #fff; border-radius: 5px; }
   .loading { animation: loading-turn 900ms linear infinite; }
   .pause { display: none; } button:hover .listening, button:focus-visible .listening { display: none; } button:hover .pause, button:focus-visible .pause { display: contents; }
   @keyframes loading-turn { to { transform: rotate(360deg); } }

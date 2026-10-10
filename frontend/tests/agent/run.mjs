@@ -361,8 +361,18 @@ try {
     run('click', '[role="option"]');
     run('click', '.tile[aria-label^="Open Quiet evenings"]');
     run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row").length===3');
+    run('click', '.album-view [aria-label="Shuffle"]');
+    assert(`document.querySelector('.album-view [aria-label="Shuffle"]').getAttribute('aria-pressed')==='true'`, 'The album Shuffle toggle must press');
+    run('click', button('Back to music'));
+    run('click', '.tile[aria-label^="Open Quiet evenings"]');
+    run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row").length===3');
+    assert(`document.querySelector('.album-view [aria-label="Shuffle"]').getAttribute('aria-pressed')==='true'`, 'Shuffle must be the player order, kept across closing and reopening the album');
+    run('click', '.album-view [aria-label="Shuffle"]');
+    assert(`document.querySelector('.album-view [aria-label="Shuffle"]').getAttribute('aria-pressed')==='false'`, 'The album Shuffle toggle must clear the player order');
+    assert(`document.querySelector('.album-view .track-row:nth-child(1) .track-artist')?.textContent.includes('David Bowie')`, 'Playlist rows must show the track artist');
     run('click', '.album-view .track-row:nth-child(1) .track');
     run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row.current").length===1 && document.querySelector(".album-view .track-row:nth-child(1).current") && !window.__auditAudio[0].paused');
+    evaluate(`document.querySelector('.album-view .track-row:nth-child(3)').scrollIntoView({ block: 'center' })`); // on phone the stacked cover puts row 3 under the bar
     run('click', '.album-view .track-row:nth-child(3) .track');
     run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row.current").length===1 && document.querySelector(".album-view .track-row:nth-child(3).current") && !window.__auditAudio[0].paused');
     assert(`!document.querySelector('.album-view .track-row:nth-child(1).current')`, 'Selecting the later duplicate must move playback and listening state to that occurrence');
@@ -370,6 +380,10 @@ try {
     run('wait', '--fn', 'window.__auditAudio[0].paused');
     assert(`document.querySelector('.album-view .track-row:nth-child(3).current .track').getAttribute('aria-label').startsWith('Play ')`, 'Selecting the current occurrence again must pause it');
     capture(size, 'playlist-duplicate-occurrence');
+    run('click', '.album-view .track-row:nth-child(2) .track-more');
+    run('click', '#track-actions-1 [role="menuitem"]');
+    run('wait', '--fn', 'document.querySelectorAll(".now-playing .song").length===4');
+    assert(`window.__auditAudio[0].paused`, 'Per-track Add to queue must append the song without starting playback');
     results.push({ size, status: 'passed' });
     console.log(`${size}: passed`);
   }
