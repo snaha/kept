@@ -3,7 +3,7 @@ import { render, cleanup } from 'vitest-browser-svelte';
 import { createRawSnippet, tick } from 'svelte';
 import type { SubsonicAPI } from 'subsonic-api';
 import { session } from './api.svelte';
-import { library, addCollection, pick, setMode } from './library.svelte';
+import { library, addCollection, pick, setMode, watchScan } from './library.svelte';
 import { catalogSearch, startCatalogSearch, moreCatalogSearch, disposeCatalogSearch } from './catalog-search.svelte';
 import { player, play, pause, moveQueue, enqueue, disposePlayback, beginCollectionOperation } from './player.svelte';
 import { readJsonPreference, writePreference, retryPreferences, subscribePreferences } from './preferences';
@@ -20,6 +20,8 @@ import CollectionDetails from './CollectionDetails.svelte';
 import Settings from './Settings.svelte';
 import Grid from './Grid.svelte';
 import App from '../App.svelte';
+import ProfileSettings from './ProfileSettings.svelte';
+import { desktop } from './desktop.svelte';
 import type { Collection, Track } from './music';
 
 const tile: Collection = { id: 'local:album:a', rawId: 'a', source: 'local', kind: 'album', title: 'Album', sub: 'Artist', cover: '', count: 2, available: true };
@@ -432,6 +434,45 @@ describe('review regressions', () => {
     await vi.waitFor(() => expect(onclose).toHaveBeenCalledOnce());
     await settings.unmount(); await tick();
     expect(document.activeElement).toBe(opener);
+  });
+  it('keeps the scan buttons owned by a pending start until a poll that began after it answers, and a failed start releases them', async () => {
+    vi.useFakeTimers();
+    try {
+      const statuses: ReturnType<typeof deferred<ReturnType<typeof ok>>>[] = [];
+      const start = deferred<ReturnType<typeof ok>>(), failing = deferred<ReturnType<typeof ok>>();
+      const startScan = vi.fn((args: { fullScan: boolean }) => (args.fullScan ? failing : start).promise);
+      session.api = api({ startScan, getScanStatus: vi.fn(() => { const poll = deferred<ReturnType<typeof ok>>(); statuses.push(poll); return poll.promise; }) });
+      library.scan = { scanning: false, count: 0, checked: false, error: '', pending: false };
+      desktop.status = { phase: 'ready', error: '', onboarding: false, url: '', username: '', password: '', frame: true, build: { version: '0', channel: '', commit: '', branch: '', builtAt: '', runUrl: '' },
+        profile: { name: 'default', label: 'Default', directory: '/data', existing: false } as DesktopStatus['profile'], musicFolder: '/music', musicFolders: ['/music'], defaultMusicFolder: '/music', defaultMusicFolderAvailable: true, source: 'folder', canCopy: false };
+      vi.stubGlobal('desktop', { profiles: vi.fn(async () => []) });
+      const idle = (poll: (typeof statuses)[number], count = 0) => { poll.resolve(ok({ scanStatus: { scanning: false, count, lastScan: '1' } })); };
+      const stop = watchScan();
+      await vi.advanceTimersByTimeAsync(1000); idle(statuses[0]); await tick();
+      let view = render(ProfileSettings, {}); await tick();
+      const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.profile-settings .actions button')].find(b => b.textContent?.trim() === label)!;
+      const blocked = () => [button('Scan for changes').getAttribute('aria-disabled'), button('Full rescan').getAttribute('aria-disabled')];
+      expect(blocked()).toEqual(['false', 'false']);
+      button('Scan for changes').focus(); button('Scan for changes').click(); await tick();
+      expect(startScan).toHaveBeenCalledWith({ fullScan: false });
+      expect(blocked()).toEqual(['true', 'true']); expect(document.activeElement).toBe(button('Scan for changes')); // owned, and focus stays
+      button('Full rescan').click(); await tick();
+      expect(startScan).toHaveBeenCalledOnce(); // no second start while one is pending
+      await vi.advanceTimersByTimeAsync(1000); // a poll begins while the start is still pending
+      start.resolve(ok({})); await tick();
+      idle(statuses[1]); await tick(); // that poll answers idle after the start resolved: it began before, so it proves nothing
+      expect(blocked()).toEqual(['true', 'true']);
+      await view.unmount(); view = render(ProfileSettings, {}); await tick(); // closing and reopening Settings keeps the ownership
+      expect(blocked()).toEqual(['true', 'true']);
+      await vi.advanceTimersByTimeAsync(1000); idle(statuses[2], 3); await tick(); // the first poll that began after the start answers: a quick scan already finished
+      expect(blocked()).toEqual(['false', 'false']);
+      button('Full rescan').click(); await tick();
+      expect(startScan).toHaveBeenLastCalledWith({ fullScan: true }); expect(blocked()).toEqual(['true', 'true']);
+      failing.reject(new Error('start timed out')); await tick(); await tick();
+      expect(document.querySelector('.profile-settings')?.textContent).toContain('start timed out');
+      expect(blocked()).toEqual(['false', 'false']); // a failed start releases the buttons without waiting for a poll
+      stop(); desktop.status = null;
+    } finally { vi.useRealTimers(); }
   });
   it('previews a Dig drag without reranking until release and keeps keyboard control immediate', async () => {
     dig.mood = 50; dig.energy = 50; dig.moodOn = false;

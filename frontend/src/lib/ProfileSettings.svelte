@@ -3,6 +3,8 @@
   import Button from './ui/button.svelte';
   import LibrarySelect from './ui/library-select.svelte';
   import { desktop } from './desktop.svelte';
+  import { session } from './api.svelte';
+  import { library, requestScan } from './library.svelte';
   let { portalTarget }: { portalTarget?: Element } = $props();
   let profiles = $state<ProfileEntry[]>([]), name = $state(''), busy = $state(''), error = $state('');
   const status = $derived(desktop.status);
@@ -20,6 +22,9 @@
     catch (failure) { error = (failure as Error).message; }
     finally { busy = ''; }
   }
+  // the library owns the scan request and its polling; the buttons stay in place and keep focus while they wait
+  const scanBlocked = $derived(!session.api || library.scan.pending || library.scan.scanning);
+  async function scan(full: boolean) { if (scanBlocked) return; error = ''; const problem = await requestScan(full); if (problem) error = problem; }
 </script>
 
 {#if status}
@@ -34,8 +39,11 @@
     <div class="actions">
       <Button variant="outline" disabled={!!busy} onclick={() => folder('add')}>Add music folder</Button>
       <Button variant="ghost" disabled={!!busy} onclick={() => folder('replace')}>Replace music folders</Button>
+      <Button variant="ghost" aria-disabled={scanBlocked} onclick={() => scan(false)}>Scan for changes</Button>
+      <Button variant="ghost" aria-disabled={scanBlocked} onclick={() => scan(true)}>Full rescan</Button>
       <Button variant="ghost" onclick={async () => { const problem = await window.desktop!.showData(); if (problem) error = problem; }}>Show data folder</Button>
     </div>
+    {#if session.api && (library.scan.pending || library.scan.scanning)}<p role="status">{library.scan.scanning ? 'Indexing…' : 'Starting a scan…'}</p>{/if}
     <details>
       <summary>Preview profiles</summary>
       <p>A fresh profile starts with setup. Copying keeps your normal Music data separate. Switching profiles restarts the app.</p>
@@ -72,6 +80,7 @@
   .folder-row { display: flex; align-items: center; gap: 12px; }
   .folder-row > span { flex: 1; min-width: 0; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .actions :global([aria-disabled="true"]) { opacity: .5; cursor: default; }
   details { border-top: 1px solid var(--ui-border); }
   summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; font-weight: 550; cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
