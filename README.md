@@ -16,6 +16,7 @@ Download the file for your computer from the [latest release](https://github.com
 |---|---|
 | Mac with Apple Silicon (M1 or later) | `Music-<version>-arm64.dmg` |
 | Linux, 64-bit PC | `Music-<version>.AppImage` or `music-desktop_<version>_amd64.deb` |
+| Linux, 64-bit ARM (Raspberry Pi with a 64-bit system) | `Music-<version>-arm64.AppImage` or `music-desktop_<version>_arm64.deb` |
 
 Windows and Intel Macs are not supported yet.
 

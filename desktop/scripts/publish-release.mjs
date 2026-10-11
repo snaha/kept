@@ -28,7 +28,7 @@ Workflow: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${pro
 
 Choose the download matching your computer:
 - **Mac Apple Silicon:** ZIP/app or DMG. Intel Macs are not included.
-- **Linux x64:** AppImage or deb, when present.
+- **Linux x64 or arm64 (such as a Raspberry Pi with a 64-bit system):** AppImage or deb, when present.
 - **Portable:** extract the complete portable folder and use its Open Music launcher. Its Data folder keeps this build’s profiles separate.
 
 Regular previews use their own profile outside the app. Fresh startup selects the Music folder; add custom folders and open your collection, or Explore first. To copy an existing Music profile, quit Music first. Files are scanned where they are; audio is not copied. Settings → Advanced shows the selected folders, active profile and build.
