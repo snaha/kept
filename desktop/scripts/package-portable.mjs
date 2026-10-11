@@ -7,7 +7,7 @@ import { stageLinuxPortable } from './portable-linux.mjs';
 const root = path.resolve(import.meta.dirname, '..');
 const info = JSON.parse(await readFile(path.join(root, 'build-info.json'), 'utf8'));
 const release = path.join(root, 'release');
-const platform = process.platform === 'darwin' ? 'mac-arm64' : 'linux-x64';
+const platform = process.platform === 'darwin' ? 'mac-arm64' : `linux-${process.arch}`;
 const name = `Music-${info.channel}-${info.commit.slice(0, 7)}-portable-${platform}`;
 const staging = path.join(root, '.portable-build', name);
 await rm(path.dirname(staging), { recursive: true, force: true });

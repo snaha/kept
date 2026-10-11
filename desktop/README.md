@@ -79,7 +79,7 @@ Single-folder profiles retain their direct scanner root. Combined collections us
 
 Build locally with `MUSIC_CHANNEL=preview pnpm --dir desktop dist:mac` or `MUSIC_CHANNEL=preview pnpm --dir desktop dist` on Linux. The generated `build-info.json` and `builder-config.json` are ignored; source package metadata is not rewritten.
 
-Builds exist for Linux x86_64 and macOS on Apple Silicon. Other platforms need their navidrome binary
+Builds exist for Linux x86_64 and arm64 and macOS on Apple Silicon. The Linux builds are native: each runs on a runner of its own architecture. Other platforms need their navidrome binary
 (`ND_OS` / `ND_ARCH` for `fetch-navidrome.mjs`) and matching `build` targets in `package.json`.
 
 ## macOS
