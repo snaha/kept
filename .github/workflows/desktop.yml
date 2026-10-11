@@ -16,8 +16,7 @@ on:
         description: Publish a preview download page
         type: boolean
         default: false
-  pull_request: # preview builds, published as a pr-<number> pre-release
-    types: [opened, synchronize, reopened, closed]
+  pull_request: # preview builds, linked from a comment on the PR
     paths: ['frontend/**', 'desktop/**', 'shared/**', '.github/workflows/desktop.yml']
   push:
     tags: ['v*']
@@ -25,7 +24,6 @@ permissions:
   contents: read
 jobs:
   prepare:
-    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.options.outputs.channel }}
@@ -50,7 +48,6 @@ jobs:
           appendFileSync(process.env.GITHUB_OUTPUT, `channel=${channel}\nmac=${platforms !== 'linux'}\nlinux=${platforms !== 'mac'}\npublish=${publish}\n`);
           JS
   checks:
-    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -151,37 +148,25 @@ jobs:
           GH_REPO: ${{ github.repository }}
           MUSIC_CHANNEL: ${{ needs.prepare.outputs.channel }}
           MUSIC_NOTARIZED: ${{ secrets.CSC_LINK != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
-  # a PR build replaces the PR's pr-<number> pre-release and keeps one comment on the PR pointing at it
+  # a PR build keeps one comment on the PR pointing at the run's artifacts, so previews stay off the releases page
   preview:
-    if: github.event_name == 'pull_request' && github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository   # fork PRs get a read-only token
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository   # fork PRs get a read-only token
     needs: [checks, mac, linux]
     runs-on: ubuntu-latest
-    permissions: { contents: write, pull-requests: write }
+    permissions: { actions: read, pull-requests: write }
     concurrency: preview-${{ github.event.number }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       PR: ${{ github.event.number }}
       SHA: ${{ github.event.pull_request.head.sha }}
+      RUN: ${{ github.run_id }}
     steps:
-      - uses: actions/download-artifact@v4
-        with: { path: release, merge-multiple: true }
       - run: |
-          gh release delete "pr-$PR" --cleanup-tag --yes || true
-          gh release create "pr-$PR" release/* --prerelease --latest=false --target "$SHA" --title "Preview of PR #$PR" \
-            --notes "Built from ${SHA::7}. Installs as **Music Preview** next to the regular app, using the separate preview profile. Fresh and portable profiles let testers compare versions independently. Builds are unsigned: on a Mac, right-click the app and choose Open the first time."
           {
             echo "### Preview build for ${SHA::7}"
-            echo "Installs as **Music Preview** next to the regular app. Use Fresh or a portable folder for independent state. All files: $(gh release view "pr-$PR" --json url -q .url)"
+            echo "Installs as **Music Preview** next to the regular app. Use Fresh or a portable folder for independent state. Builds are unsigned: on a Mac, right-click the app and choose Open the first time. Downloads need a GitHub login and expire after 90 days."
             echo
-            gh release view "pr-$PR" --json assets -q '.assets[] | "- [\(.name)](\(.url))"'
+            gh api "repos/$GH_REPO/actions/runs/$RUN/artifacts" -q ".artifacts[] | \"- [\(.name)](https://github.com/$GH_REPO/actions/runs/$RUN/artifacts/\(.id))\""
           } > comment.md
           gh pr comment "$PR" --edit-last --body-file comment.md || gh pr comment "$PR" --body-file comment.md
-  # closing the PR removes its preview
-  preview-cleanup:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    permissions: { contents: write }
-    steps:
-      - run: gh release delete "pr-${{ github.event.number }}" --cleanup-tag --yes || true
-        env: { GH_TOKEN: '${{ github.token }}', GH_REPO: '${{ github.repository }}' }
