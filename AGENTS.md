@@ -31,6 +31,9 @@ This project uses **pnpm** (not npm or yarn). Always use `pnpm` commands:
 The app is a video game, not a CRUD interface: performant, reactive, low latency. The user should feel in
 control and feel good using it.
 
+- **Playback comes first, above everything else.** Music never stops, skips or stutters because something
+  else wants the resources: library indexing, UI animations, the visualizer, cover loading or any other
+  work. When they compete, the other work slows down, drops frames or waits; the audio does not.
 - Every input answers on the next frame. Show the response first, then let the data settle behind it.
 - Never block the UI on the network or the scanner: show what is there, refine in the background (paging,
   cover warming, polling). Background work must not starve what is on screen.
