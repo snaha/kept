@@ -11,5 +11,7 @@ export default defineConfig({
   plugins: [svelte()],
   // Syntax baseline; DOM APIs also need capability checks (see frontend/README.md).
   build: { target: ['chrome111', 'firefox114', 'safari16.4'] },
+  // the desktop window loads this server through app://music/, so the HMR socket needs a real address
+  server: process.env.MUSIC_HMR_PORT ? { hmr: { protocol: 'ws', host: '127.0.0.1', clientPort: Number(process.env.MUSIC_HMR_PORT) } } : undefined,
   define: { __LAN_IP__: JSON.stringify(lanIp) },
 })

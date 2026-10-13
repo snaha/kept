@@ -18,6 +18,12 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, 'dist');
 const navidromeBin = app.isPackaged ? path.join(process.resourcesPath, 'navidrome') : path.join(here, 'bin', 'navidrome');
 const page = 'app://music/';
+// pnpm dev:hot: the Vite dev server answers app://music/ so the window keeps its origin and gets hot reload
+const devServer = app.isPackaged ? '' : process.env.MUSIC_DEV_SERVER || '';
+async function fetchDevServer(target, tries = 50) { // Vite may still be starting when the window opens
+  try { return await net.fetch(target); }
+  catch (error) { if (!tries) throw error; await new Promise(resolve => setTimeout(resolve, 100)); return fetchDevServer(target, tries - 1); }
+}
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const build = readJSON(path.join(here, 'build-info.json'), { version: app.getVersion(), channel: 'stable', commit: '', branch: '', builtAt: '', runUrl: '' });
 let profile, config, launchError = '', hasInstanceLock = false;
@@ -120,6 +126,7 @@ app.whenReady().then(async () => {
     if (url.hostname !== 'music') return new Response('Not found', { status: 404 });
     if (url.pathname === '/__music_starting') return new Response('<!doctype html><meta name=viewport content="width=device-width"><title>Music</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#18181b;color:#eee;font:16px system-ui}</style><p role=status>Opening your library…</p>', { headers: { 'content-type': 'text/html' } });
     if (url.pathname === '/__music_storage_migration') return new Response('<!doctype html><title>Music storage migration</title>', { headers: { 'content-type': 'text/html' } });
+    if (devServer) return fetchDevServer(devServer + url.pathname + url.search);
     const file = path.resolve(dist, `.${decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)}`);
     if (path.relative(dist, file).startsWith('..') || !existsSync(file) || !statSync(file).isFile()) return new Response('Not found', { status: 404 });
     return net.fetch(pathToFileURL(file).href);

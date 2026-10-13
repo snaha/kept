@@ -12,6 +12,7 @@
     "build:preload": "node scripts/build-preload.mjs",
     "test": "node --test contracts.test.js music-store.test.js history.test.js player.test.js music-folders.test.js sign-mac.test.js portable-linux.test.js service-lifecycle.test.js main.test.js profiles.test.js && node --experimental-strip-types --test ../frontend/tests/*.test.ts",
     "dev": "pnpm build:preload && pnpm build:frontend && electron .",
+    "dev:hot": "pnpm build:preload && sh -c 'trap \"kill 0\" EXIT; (cd ../frontend && MUSIC_HMR_PORT=5183 exec pnpm exec vite --host 127.0.0.1 --port 5183 --strictPort) & MUSIC_DEV_SERVER=http://127.0.0.1:5183 electron .'",
     "prepare:build": "node scripts/prepare-build.mjs",
     "dist": "pnpm prepare:build && pnpm navidrome && pnpm build:preload && pnpm build:frontend && electron-builder --config builder-config.json --linux --publish never && pnpm pack:portable",
     "dist:mac": "pnpm navidrome && pnpm build:frontend && pnpm pack:mac:dir && pnpm pack:mac && pnpm pack:portable",

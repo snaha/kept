@@ -12,6 +12,7 @@ chosen on first run and reused, so QR codes and bookmarks stay valid across rest
     pnpm navidrome          # downloads the navidrome binary for this platform into bin/
     pnpm build:frontend     # builds ../frontend into dist/
     pnpm dev                # runs the app from source
+    pnpm dev:hot            # same, with the frontend hot-reloading from a Vite dev server
     pnpm dev:app            # macOS: prepare the repository-local app bundle
     pnpm dist               # all of the above, then AppImage and .deb into release/
 
