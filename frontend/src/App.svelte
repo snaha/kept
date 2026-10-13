@@ -12,6 +12,7 @@
   import { toolbar } from './lib/ui-style.svelte';
   import Grid from './lib/Grid.svelte';
   import Visualizer from './lib/Visualizer.svelte';
+  import { bg } from './lib/background.svelte';
   import Startup from './lib/Startup.svelte';
   import { desktop, initDesktop } from './lib/desktop.svelte';
 
@@ -53,9 +54,13 @@
     input?.focus({ preventScroll: true }); input?.select();
   }
   function onkeydown(e: KeyboardEvent) {
-    if (e.defaultPrevented || e.isComposing || !session.api || player.visOpen) return;
+    if (e.defaultPrevented || e.isComposing || !session.api) return;
     const target = e.target as HTMLElement;
     const editing = !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"]');
+    // the visualizer, open and closed: ctrl/cmd-T as in iTunes, and V, since a browser tab keeps ctrl-T for itself
+    const combo = e.metaKey || e.ctrlKey, key = e.key.toLowerCase();
+    if (!e.altKey && !e.repeat && (combo ? key === 't' : key === 'v' && !editing)) { e.preventDefault(); player.visOpen = !player.visOpen; wake(); return; }
+    if (player.visOpen) return; // the visualizer owns the keys while open
     if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); void focusSearch(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'Escape') {
@@ -116,6 +121,7 @@
         <div><dt><kbd>/</kbd> <kbd>⌘ / Ctrl K</kbd></dt><dd>Search library</dd></div>
         <div><dt><kbd>Q</kbd></dt><dd>Open / close player</dd></div>
         <div><dt><kbd>S</kbd></dt><dd>Settings</dd></div>
+        <div><dt><kbd>V</kbd> <kbd>⌘ / Ctrl T</kbd></dt><dd>Open / close the visualizer</dd></div>
         <div><dt><kbd>Esc</kbd></dt><dd>Close the active view or menu</dd></div>
         <div><dt><kbd>↑</kbd> <kbd>↓</kbd> in queue</dt><dd>Navigate queued tracks</dd></div>
         <div><dt><kbd>Tab</kbd></dt><dd>Navigate controls</dd></div>
@@ -127,7 +133,9 @@
     </aside>
   {/if}
   <Bar hidden={idle} />
-  {#if player.visOpen}<Visualizer />{/if}
+  <!-- one visualizer for both places: behind the grid as the background material, and fullscreen. Opening it fullscreen
+    carries on from the picture the background shows -->
+  {#if player.visOpen || bg.material === 'viz'}<Visualizer background={!player.visOpen} />{/if}
 {/if}
 
 <style>
