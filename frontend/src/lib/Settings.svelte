@@ -9,7 +9,7 @@
   import { downloadPlaybackLog } from './playback-log';
   import { bg, clearBackground, importBackground } from './background.svelte';
 
-  let { art = $bindable(), motion = $bindable(), initialTab = 'appearance', onclose }: { art: boolean; motion: boolean; initialTab?: string; onclose: () => void } = $props();
+  let { coversOnly = $bindable(), motion = $bindable(), initialTab = 'appearance', onclose }: { coversOnly: boolean; motion: boolean; initialTab?: string; onclose: () => void } = $props();
   let dialog = $state<HTMLDialogElement>(null!);
   let content = $state<HTMLDivElement>(null!);
   let activeTab = $state(untrack(() => initialTab));
@@ -87,7 +87,7 @@
       {#if activeTab === 'appearance'}
         <section aria-labelledby="appearance-title">
           <h2 id="appearance-title">Appearance</h2>
-          <label><input type="checkbox" bind:checked={art} /> Show artwork</label>
+          <label><input type="checkbox" bind:checked={coversOnly} /> Only show albums with cover</label>
           <label><input type="checkbox" bind:checked={motion} /> Motion</label>
           <details>
             <summary>Background customization</summary>

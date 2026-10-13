@@ -3,7 +3,7 @@ import type { Collection, Source } from './music';
 type Metadata = { favorite: boolean; genres: string[]; year?: number };
 export type BrowseInput = {
   tiles: Collection[]; source: Source | 'all'; key: string; query: string; artist: string;
-  show: string; favoritesOnly: boolean; sort: string; direction: number; randomSeed: number;
+  show: string; favoritesOnly: boolean; coversOnly: boolean; sort: string; direction: number; randomSeed: number;
   colorOrder: Record<string, number>; digActive: boolean;
   metadata: (tile: Collection) => Metadata; score: (tile: Collection) => number;
   tagged: (tile: Collection) => boolean; plays: (id: string) => number;
@@ -22,7 +22,7 @@ export function selectBrowseCollections(input: BrowseInput): Collection[] {
   const result = input.tiles.filter(tile => {
     const info = input.metadata(tile);
     return (input.source === 'all' || tile.source === input.source) &&
-      (!input.favoritesOnly || info.favorite) && (!input.artist || tile.sub === input.artist) &&
+      (!input.favoritesOnly || info.favorite) && (!input.coversOnly || tile.kind !== 'album' || !!tile.cover) && (!input.artist || tile.sub === input.artist) &&
       (input.show !== 'favorites' || info.favorite) &&
       (!input.show.startsWith('genre:') || info.genres.includes(input.show.slice(6))) &&
       (input.show !== 'mood' || input.tagged(tile)) && input.score(tile) > 0 &&

@@ -37,8 +37,7 @@
   let advancedLayout = $state(false);
   function resizeGrid(value: number) { cols = 11 - value; gap = Math.round(24 + cols * 8); }
   let gap = $state(savedNumber('grid.gap', 48, 0, 160));
-  // The former `art` preference filtered out albums without covers; it did not hide images.
-  let art = $state(readPreference('artwork.visible') !== '0');
+  let coversOnly = $state(readPreference('covers.only') === '1'); // off by default
   let motion = $state(readPreference('motion') === '1'); // off by default
   type BarMode = 'library' | 'filters' | 'layout' | 'look' | 'theme';
   function closeModes() {
@@ -49,7 +48,7 @@
   function backToSelector() { player.view = ''; toolbar.selecting = true; requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.mode-options button[aria-pressed=true]')?.focus()); }
   $effect(() => {
     writePreference('grid.cols', String(cols)); writePreference('grid.gap', String(gap));
-    writePreference('artwork.visible', art ? '1' : '0'); writePreference('motion', motion ? '1' : '0');
+    writePreference('covers.only', coversOnly ? '1' : '0'); writePreference('motion', motion ? '1' : '0');
     writePreference('library.source', library.source);
   });
   let query = $state('');
@@ -95,19 +94,19 @@
   const colorsReady = $derived(sourceTiles.filter(tile => tile.cover && catalog.colors[tile.id]?.colorReady && catalog.colors[tile.id]?.colorRevision === coverRevision(tile)).length);
   const artists = $derived([...new Set(sourceTiles.filter((t) => t.kind === 'album').map((t) => t.sub).filter(Boolean))].sort(collator.compare));
   const view = createBrowseView(() => ({
-    tiles, source: library.source, query, artist: artistFilter, show: showFilter, favoritesOnly,
+    tiles, source: library.source, query, artist: artistFilter, show: showFilter, favoritesOnly, coversOnly,
     sort, direction: sortDirection, randomSeed, colorOrder, digActive: digActive(),
     metadata, score: digScore, tagged: tile => !!catalog.items[tile.id]?.traits,
     plays: id => catalog.stats[id]?.plays || 0,
     key: JSON.stringify([library.mode, library.source, query, artistFilter, sort, sortDirection, sortRevision,
-      randomSeed, showFilter, favoritesOnly, dig.moodOn, dig.mood, dig.energy, dig.familiarity, dig.acoustic, dig.vocal]),
+      randomSeed, showFilter, favoritesOnly, coversOnly, dig.moodOn, dig.mood, dig.energy, dig.familiarity, dig.acoustic, dig.vocal]),
   }));
   const shown = $derived(view.collections);
   onMount(() => registerBrowseSource(() => searching ? catalogSearch.collections : view.collections));
   function filterChanged() { scrollTop = 0; details = null; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
   function changeMode(mode: Mode) { artistFilter = ''; favoritesOnly = false; filterChanged(); void setMode(mode); }
   function changeSource() { artistFilter = ''; filterChanged(); }
-  function resetFilters() { query = ''; artistFilter = ''; library.source = 'all'; sort = 'title'; sortDirection = 1; showFilter = 'all'; favoritesOnly = false; resetDig(); filterChanged(); }
+  function resetFilters() { query = ''; artistFilter = ''; library.source = 'all'; sort = 'title'; sortDirection = 1; showFilter = 'all'; favoritesOnly = false; coversOnly = false; resetDig(); filterChanged(); }
 
   let viewportWidth = $state(innerWidth), viewportHeight = $state(innerHeight), scrollTop = $state(0);
   const pixelGap = $derived(Math.max(0.2, gap * (viewportWidth + (innerWidth - viewportWidth)) / 3312));
@@ -224,9 +223,9 @@
 
 {#snippet collectionCard(t: Tile)}
       {@const playback = collectionPlayback(t)}
-      <div class="tile-wrap" class:discovered={t.id === discoveryId} class:current={playback.current} class:listening={playback.listening}>
+      <div class="tile-wrap" class:coverless={!t.cover} class:discovered={t.id === discoveryId} class:current={playback.current} class:listening={playback.listening}>
         <button class="tile" class:active={playback.listening} onclick={() => { details = t; player.queueOpen = false; player.view = ''; }} aria-label="Open {t.title} — {t.sub}" aria-current={playback.current ? 'true' : undefined}>
-          {#if art && t.cover}<img src={t.cover} alt="" loading="lazy" draggable="false" />{:else}<span class="fallback">{t.title}</span>{/if}
+          {#if t.cover}<img src={t.cover} alt="" loading="lazy" draggable="false" />{/if}
         </button>
         <div class="tile-play"><CollectionPlayback collection={t} compact onplay={() => { if (!t.available) details = t; else pick(t); }} /></div>
         <div class="tile-info"><span class="tile-title">{t.title}<small>{t.sub}</small></span></div>
@@ -290,7 +289,7 @@
 {#if currentDetails}{#key currentDetails.id}<CollectionDetails tile={currentDetails} onclose={() => (details = null)} />{/key}{/if}
 {#if library.error || library.scan.error}<div class="library-status" role="alert">{library.error || library.scan.error}</div>{/if}
 
-{#if player.view === 'settings'}<Settings bind:art bind:motion initialTab={settingsTab} onclose={() => (player.view = '')} />{/if}
+{#if player.view === 'settings'}<Settings bind:coversOnly bind:motion initialTab={settingsTab} onclose={() => (player.view = '')} />{/if}
 
 <style>
   .scroll {
@@ -359,19 +358,22 @@
   .group { display: flex; flex-wrap: wrap; gap: 6px; } .group button { padding: 8px 12px; min-height: 36px; } .group button.on { background: var(--ui-muted); }
   .color-status { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 6px 14px; color: var(--ui-text-muted); border-top: 1px solid var(--ui-border); }
   .color-status button { color: var(--ui-text); min-height: 32px; padding: 4px 8px; text-decoration: underline; text-underline-offset: 3px; }
-  .tile-wrap { position: relative; isolation: isolate; aspect-ratio: 1; min-width: 0; }
+  /* --edge is the outline from Figma, drawn outside the cover: 2px with a glow on hover, 8px on a 200px tile (scaled with it) while playing */
+  .tile-wrap { position: relative; isolation: isolate; aspect-ratio: 1; min-width: 0; container-type: inline-size; --edge: 2px; }
+  .tile-wrap.listening { --edge: clamp(3px, 4cqw, 8px); }
+  .tile-wrap:hover, .tile-wrap:focus-within, .tile-wrap.listening { z-index: 1; } /* the outline spills over the neighbours */
+  .tile-wrap::after { content: ''; position: absolute; z-index: 4; inset: calc(-1 * var(--edge)); border: var(--edge) solid #fafafa; border-radius: calc(2px + var(--edge)); pointer-events: none; opacity: 0; }
+  .tile-wrap:hover::after, .tile-wrap:focus-within::after, .tile-wrap.listening::after { opacity: 1; }
+  .tile-wrap:not(.listening):hover::after, .tile-wrap:not(.listening):focus-within::after { box-shadow: 0 0 16px 4px #ffffff80; }
   .tile { all: unset; display: block; cursor: pointer; position: relative; width: 100%; height: 100%; overflow: hidden; background: #191919; border-radius: 2px; box-shadow: 0 3px 6px #0004; }
   .tile img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .tile:focus-visible { outline: 2px solid white; outline-offset: 3px; }
-  .tile-wrap:hover .tile, .tile-wrap:focus-within .tile { outline: 1px solid #fff; outline-offset: -1px; box-shadow: 0 4px 18px #0009; }
-  .tile-wrap.listening .tile { outline: 3px solid #fff; outline-offset: -3px; }
-  .tile-play { position: absolute; z-index: 3; top: 6px; right: 6px; opacity: 0; pointer-events: none; }
+  .tile-play { position: absolute; z-index: 3; top: 6px; right: 8px; opacity: 0; pointer-events: none; }
   .tile-wrap:hover .tile-play, .tile-wrap:focus-within .tile-play, .tile-wrap.current .tile-play { opacity: 1; pointer-events: auto; }
-  .tile-info { position: absolute; z-index: 2; bottom: 0; left: 0; right: 0; padding: 30px 10px 9px; display: flex; align-items: flex-end; gap: 8px; background: linear-gradient(transparent, #000e); color: white; pointer-events: none; opacity: 0; transition: opacity 120ms ease-out; font: 12px/1.3 var(--ui-font); }
-  .tile-wrap:hover .tile-info, .tile-wrap:focus-within .tile-info, .discovered .tile-info { opacity: 1; }
-  .tile-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tile-title small { display: block; overflow: hidden; text-overflow: ellipsis; color: #dedede; font-size: 11px; margin-top: 3px; }
+  .tile-info { position: absolute; z-index: 2; bottom: 0; left: 0; right: 0; min-height: 50%; box-sizing: border-box; padding: 30px 8px 8px; display: flex; align-items: flex-end; gap: 8px; background: linear-gradient(transparent, #000000b3); color: #fafafa; pointer-events: none; opacity: 0; transition: opacity 120ms ease-out; font: 14px/1.43 var(--ui-font); }
+  .tile-wrap:hover .tile-info, .tile-wrap:focus-within .tile-info, .discovered .tile-info, .coverless .tile-info { opacity: 1; }
+  .tile-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; } .tile-title small { display: block; overflow: hidden; text-overflow: ellipsis; font-size: inherit; font-weight: 400; }
   .discovered { outline: 2px solid var(--ui-text); outline-offset: 3px; }
-  .fallback { display: grid; place-items: center; height: 100%; padding: 16px; box-sizing: border-box; color: #ddd; text-align: center; }
   .empty-library { position: fixed; inset: 35% 10% auto; text-align: center; color: var(--ui-text); font: 16px/1.5 var(--ui-font); }
   .empty-library p + p { color: var(--ui-text-muted); font-size: 13px; } .empty-library button { color: inherit; background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 4px; padding: 10px 14px; cursor: pointer; font: inherit; margin: 4px; }
   .empty-library h2 { margin: 0 0 12px; font-size: 24px; font-weight: 600; letter-spacing: -.025em; }
@@ -389,7 +391,7 @@
     .browse-search input { min-height: 40px; } .icon-button { min-width: 44px; min-height: 44px; } .sort-direction { width: 44px; }
     .secondary-controls { align-items: flex-start; } .filter-tray, .controls { gap: 10px; } .filter-tray :global(.library-select-field) { flex: 1; min-width: 150px; width: auto; } .slider-control { min-width: 0; width: 100%; } .library-count { margin: 0; }
     .mode-options { right: -40px; } .color-status { font-size: 11px; flex-wrap: wrap; justify-content: flex-start; }
-    .tile-info { font-size: 11px; } .tile-title small { font-size: 10px; } .tile-play { top: 4px; right: 4px; }
+    .tile-info { font-size: 11px; }
   }
   @media (hover: none) { .tile-play { opacity: 1; pointer-events: auto; } }
   @media (prefers-reduced-motion: reduce) { .browse, .browse.hidden, .tile-info { transition: none; transform: none; } }

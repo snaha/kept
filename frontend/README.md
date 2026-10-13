@@ -15,8 +15,8 @@ the cards. The top bar fades in as the mouse approaches the top of the window. T
 between two control sets: *Layout* (columns 1–10, gap, "motion")
 and *Look* (background material: vinyl, speaker grille, speaker cone, fabric). Everything is remembered.
 
-Settings → Appearance → Show artwork switches between covers and title tiles. Albums without cover art
-remain visible either way. Indexing refreshes the library even when a scan finishes between status polls;
+Settings → Appearance → Only show albums with cover hides albums without cover art; it is off by default.
+Indexing refreshes the library even when a scan finishes between status polls;
 an empty desktop library shows its selected folder, and indexing failures appear in the library status.
 
 | Key | Action |

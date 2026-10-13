@@ -304,7 +304,7 @@ describe('review regressions', () => {
     const opener = document.querySelector<HTMLButtonElement>('.now-playing button')!;
     opener.focus();
     const onclose = vi.fn();
-    const settings = render(Settings, { art: true, motion: false, onclose }); await tick();
+    const settings = render(Settings, { coversOnly: false, motion: false, onclose }); await tick();
     const dialog = document.querySelector<HTMLDialogElement>('dialog.settings-dialog')!;
     expect(dialog.open).toBe(true); expect(dialog.contains(document.activeElement)).toBe(true);
     const close = dialog.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!;
