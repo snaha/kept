@@ -1,6 +1,7 @@
 import { readJsonPreference, readPreference, writePreference } from './preferences';
 import { SubsonicAPI } from 'subsonic-api';
 import { randomId } from './random-id';
+import { rememberShare } from './control-client.svelte';
 
 type Creds = { url: string; username: string; password: string };
 
@@ -37,7 +38,9 @@ export async function restore() {
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.get('u') && h.get('p') && h.get('s')) {
     history.replaceState(null, '', location.pathname);
-    return login({ url: h.get('s')!, username: h.get('u')!, password: h.get('p')! }).catch(logout);
+    // `m` says what the phone does with the library: control the computer's player (the default) or play here
+    return login({ url: h.get('s')!, username: h.get('u')!, password: h.get('p')! })
+      .then(() => rememberShare(h.get('m') === 'library' ? 'library' : 'control', h.get('p')!)).catch(logout);
   }
   // the desktop app injects its local server and account; otherwise use what the user typed last time
   if (window.desktop) {

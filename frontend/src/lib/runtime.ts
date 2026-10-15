@@ -7,11 +7,12 @@ import { startUiStyle } from './ui-style.svelte';
 import { startPreferenceStatus } from './preferences-status.svelte';
 import { disposeHistory } from './listening-history.svelte';
 import { startControlHost } from './control-host.svelte';
+import { startControlClient } from './control-client.svelte';
 let dispose: (() => void) | undefined;
 export function startRuntime() {
   if (dispose) return dispose;
   initPlayback();
-  const subscriptions = [startPreferenceStatus(), startUiStyle(), startBackground(), startDiscovery(), watchScan(), startControlHost()];
+  const subscriptions = [startPreferenceStatus(), startUiStyle(), startBackground(), startDiscovery(), watchScan(), startControlHost(), startControlClient()];
   let active = true;
   dispose = () => {
     if (!active) return; active = false;

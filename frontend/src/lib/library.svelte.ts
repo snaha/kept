@@ -1,6 +1,6 @@
 import type { ScanStatus } from 'subsonic-api';
 import { ok, session } from './api.svelte';
-import { appendToSession, enqueue, play, player, beginCollectionOperation, queueSession, type Grid } from './player.svelte';
+import { appendToSession, enqueue, play, player, beginCollectionOperation, queueSession, remote, type Grid } from './player.svelte';
 import { type Collection, type Track } from './music';
 import { album, playlist, localTrack, localCatalog } from './local-catalog';
 export { album, playlist, localTrack } from './local-catalog';
@@ -114,6 +114,7 @@ export async function* trackPages(t: Tile): AsyncGenerator<Track[]> {
   yield* localCatalog.tracks(api, t);
 }
 export async function pick(t: Tile) {
+  if (remote.send) return remote.send({ type: 'command', name: 'play', collection: t });
   const mine = ++pickRequest; player.loadingCollectionId = t.id; player.error = '';
   const selection = ++player.requestRevision, api = session.api;
   const operation = beginCollectionOperation('play', t.id);
@@ -142,6 +143,7 @@ export async function pick(t: Tile) {
 }
 let addTail = Promise.resolve();
 export function addCollection(t: Tile) {
+  if (remote.send) { remote.send({ type: 'command', name: 'add', collection: t }); return addTail; }
   const version = queueSession(), api = session.api;
   const operation = beginCollectionOperation('add', t.id);
   addTail = addTail.then(async () => {

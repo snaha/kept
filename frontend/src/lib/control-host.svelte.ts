@@ -1,19 +1,21 @@
 import { desktop } from './desktop.svelte';
-import { player, enqueue, next, prev, toggle, setVolume } from './player.svelte';
+import { player, enqueue, next, play, prev, toggle, setVolume } from './player.svelte';
 import { pick, addCollection, type Tile } from './library.svelte';
 import type { Track } from './music';
 
 // The app window is the host of the control channel: phones send commands, the window applies them to its own
 // player and publishes what plays. Nothing here owns playback; it calls the same functions the window's UI calls.
 export type ControlState = {
-  song?: { id: string; title: string; artist?: string; album?: string; albumId?: string; cover: string; duration?: number };
+  // the cover goes by id: the host's cover URLs point at its own loopback address, the phone builds its own
+  song?: { id: string; rawId: string; title: string; artist?: string; album?: string; albumId?: string; coverId?: string; duration?: number; origin?: Track['playbackOrigin'] };
   playing: boolean; pending: boolean; time: number; duration: number; volume: number; index: number; queueLength: number;
 };
 export type ControlCommand =
   | { type: 'command'; name: 'toggle' | 'next' | 'prev' }
   | { type: 'command'; name: 'volume'; value: number }
   | { type: 'command'; name: 'play' | 'add'; collection: Tile }
-  | { type: 'command'; name: 'queue'; tracks: Track[] };
+  | { type: 'command'; name: 'queue'; tracks: Track[] }
+  | { type: 'command'; name: 'tracks'; tracks: Track[]; index: number };
 
 const RETRY_MS = 3000;
 const text = (value: unknown) => typeof value === 'string' && value.length > 0;
@@ -29,7 +31,7 @@ const isTrack = (value: unknown): value is Track => {
 export function controlState(): ControlState {
   const s = player.song;
   return {
-    song: s ? { id: s.id, title: s.title, artist: s.artist, album: s.album, albumId: s.albumId, cover: s.cover, duration: s.duration } : undefined,
+    song: s ? { id: s.id, rawId: s.rawId, title: s.title, artist: s.artist, album: s.album, albumId: s.albumId, coverId: s.coverId, duration: s.duration, origin: s.playbackOrigin } : undefined,
     playing: player.playing, pending: player.pending, time: Math.floor(player.time), duration: Math.round(player.duration), volume: player.volume,
     index: player.index, queueLength: player.queue.length,
   };
@@ -46,6 +48,7 @@ export function applyCommand(command: unknown) {
     case 'play': return isCollection(c.collection) ? void pick(c.collection) : undefined;
     case 'add': return isCollection(c.collection) ? void addCollection(c.collection) : undefined;
     case 'queue': return Array.isArray(c.tracks) && c.tracks.every(isTrack) ? enqueue(c.tracks) : undefined;
+    case 'tracks': return Array.isArray(c.tracks) && c.tracks.every(isTrack) && Number.isInteger(c.index) ? void play(c.tracks, c.index) : undefined;
   }
 }
 
