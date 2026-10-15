@@ -1,5 +1,6 @@
 import { readJsonPreference, readPreference, writePreference } from './preferences';
 import { SubsonicAPI } from 'subsonic-api';
+import { randomId } from './random-id';
 
 type Creds = { url: string; username: string; password: string };
 
@@ -16,7 +17,7 @@ export function ok<T extends { status: string }>(r: T): T {
 export async function login(c: Creds) {
   const base = c.url.replace(/\/+$/, '');
   // ponytail: one salt per install keeps cover and stream URLs identical across runs, so the browser cache serves them
-  const salt = readPreference('auth.salt') || crypto.randomUUID().replace(/-/g, '');
+  const salt = readPreference('auth.salt') || randomId();
   writePreference('auth.salt', salt);
   const api = new SubsonicAPI({ url: base, auth: { username: c.username, password: c.password }, salt, reuseSalt: true });
   const r = await api.ping(); // the library resolves failures, so check status ourselves

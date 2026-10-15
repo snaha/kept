@@ -1,3 +1,4 @@
+import { randomId } from './random-id';
 import { logPlayback } from './playback-log';
 import { readPreference, writePreference } from './preferences';
 import { session, streamUrl } from './api.svelte';
@@ -24,7 +25,7 @@ const savedVolume = Number(readPreference('music.volume', '100'));
 player.volume = Number.isFinite(savedVolume) ? Math.max(0, Math.min(100, savedVolume)) : 100;
 export function beginCollectionOperation(kind: 'play' | 'add', collectionId: string) {
   if (kind === 'play') cancelPlayOperations();
-  const id = crypto.randomUUID();
+  const id = randomId();
   player.collectionOperations.push({ id, kind, collectionId });
   return {
     id,
@@ -33,7 +34,7 @@ export function beginCollectionOperation(kind: 'play' | 'add', collectionId: str
   };
 }
 function cancelPlayOperations(except?: string) { player.collectionOperations = player.collectionOperations.filter(op => op.kind !== 'play' || op.id === except); }
-const queueEntry = (track: Track): Track => ({ ...track, queueEntryId: crypto.randomUUID() });
+const queueEntry = (track: Track): Track => ({ ...track, queueEntryId: randomId() });
 let localTrack: Track | undefined, scrobbled = false;
 let intent = 0, perm: Uint32Array = new Uint32Array(0), cursor = -1;
 let randomGrid: Grid | undefined, randomDraw = 0;
@@ -43,7 +44,7 @@ let historyContext: ListeningContext | undefined;
 function freshHistoryContext() { historyContext = undefined; }
 function remember(index: number) {
   if (!historyContext) {
-    const context = $state<ListeningContext>({ id: crypto.randomUUID(), queue: player.queue.map(t => ({ ...t })), origin: player.queue[index]?.playbackOrigin, order: player.order, permutation: [...perm] });
+    const context = $state<ListeningContext>({ id: randomId(), queue: player.queue.map(t => ({ ...t })), origin: player.queue[index]?.playbackOrigin, order: player.order, permutation: [...perm] });
     historyContext = context;
   }
   recordHistory(historyContext, index, cursor);
