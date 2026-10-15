@@ -258,11 +258,11 @@
   const shiftX = $derived(drift.current.x * -8), shiftY = $derived(-offset + drift.current.y * -6);
   // L, or ctrl/cmd-L as in iTunes, scrolls to the playing album. If it is not in the list (another mode, a search, a
   // filter) it first goes to all albums, and the jump follows once they are in
-  let want = false;
+  let want = $state(''); // the album a jump waits for while the album list comes in; the jump is off if another album takes over
   function reveal() {
     if (!activeId) return;
     if (!shown.some(t => t.id === activeId)) {
-      want = true; query = ''; artistFilter = ''; showFilter = 'all'; favoritesOnly = false; library.source = 'all'; resetDig();
+      want = activeId; query = ''; artistFilter = ''; showFilter = 'all'; favoritesOnly = false; library.source = 'all'; resetDig();
       if (library.mode !== 'albums') changeMode('albums'); else filterChanged();
       return;
     }
@@ -276,7 +276,11 @@
       scroller.scrollBy({ [flow ? 'left' : 'top']: round(to - offset, looping ? period : 0), behavior: 'smooth' });
     });
   }
-  $effect(() => { if (want && shown.some(t => t.id === activeId)) { want = false; untrack(reveal); } });
+  $effect(() => {
+    if (!want) return;
+    if (want !== activeId) { want = ''; return; }
+    if (shown.some(t => t.id === want)) { want = ''; untrack(reveal); }
+  });
   function onkeydown(e: KeyboardEvent) {
     if (e.defaultPrevented || e.isComposing || player.visOpen) return;
     const target = e.target as HTMLElement, combo = e.ctrlKey || e.metaKey; // the combination also works from the search field
