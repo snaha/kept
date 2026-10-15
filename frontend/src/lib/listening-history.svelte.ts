@@ -13,6 +13,7 @@ let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
 let operations: Promise<unknown> = Promise.resolve();
 let queryRevision = 0;
 let requestedWindow = 50;
+let visibleQuery = '';
 const pendingClears = new Set<string>();
 const queuedContexts = new Map<string, Set<string>>();
 const unsaved = new Map<string, ReturnType<typeof snapshot>[]>();
@@ -36,6 +37,7 @@ export function loadHistory() {
   account = next; listeningHistory.entries = []; listeningHistory.query = ''; listeningHistory.total = 0; listeningHistory.hasMore = false; listeningHistory.error = '';
   queryRevision++;
   requestedWindow = 50;
+  visibleQuery = '';
   try {
     const data = readJsonPreference<{ contexts?: unknown; entries?: unknown; stats?: unknown } | null>(account, null);
     if (!data || !Array.isArray(data.contexts) || !Array.isArray(data.entries)) throw new Error('No legacy history');
@@ -91,7 +93,10 @@ function persist(entries = listeningHistory.entries, changedContext?: ListeningC
   if (writePreference(account, JSON.stringify({ ...batch, stats: $state.snapshot(browserStats.values) }))) { listeningHistory.persistedRevision++; listeningHistory.error = ''; }
   else listeningHistory.error = 'Browser storage is full. Your current session is still available.';
 }
-export async function searchHistory(query = listeningHistory.query, more = false, retainLoaded = false) {
+export function searchHistory(query = listeningHistory.query, more = false, retainLoaded = false) {
+  return refreshHistory(query, { more, retainLoaded });
+}
+async function refreshHistory(query: string, { more = false, retainLoaded = false, reconcile = false }: { more?: boolean; retainLoaded?: boolean; reconcile?: boolean } = {}) {
   loadHistory();
   const revision = ++queryRevision;
   const activeAccount = account;
@@ -99,7 +104,9 @@ export async function searchHistory(query = listeningHistory.query, more = false
   const offset = more && sameQuery ? listeningHistory.entries.length : 0;
   if (!sameQuery || (!more && !retainLoaded)) requestedWindow = 50;
   else requestedWindow = Math.max(requestedWindow, listeningHistory.entries.length) + (more ? 50 : 0);
-  const target = requestedWindow;
+  // Playback reconciles one authoritative page, independent of loaded depth.
+  // Explicit searches still refresh the user's requested window.
+  const target = reconcile ? 50 : requestedWindow;
   listeningHistory.query = query;
   const bridge = window.musicHistory;
   const activeScope = scope();
@@ -126,9 +133,18 @@ export async function searchHistory(query = listeningHistory.query, more = false
     const contexts = new Map(listeningHistory.entries.map(entry => [entry.context.id, entry.context]));
     const entries = result.entries.map(entry => ({ ...entry, context: contexts.get(entry.context.id) || entry.context }));
     const existingIds = new Set(listeningHistory.entries.map(entry => entry.id));
-    listeningHistory.entries = offset ? [...listeningHistory.entries, ...entries.filter(entry => !existingIds.has(entry.id))] : entries;
+    if (reconcile && visibleQuery === query) {
+      // The last refreshed row must connect to the loaded tail. Without that
+      // boundary, retaining old rows would make offset pagination skip a gap.
+      const boundary = listeningHistory.entries.findIndex(entry => entry.id === entries.at(-1)?.id);
+      listeningHistory.entries = boundary >= 0 ? [...entries, ...listeningHistory.entries.slice(boundary + 1)] : entries;
+      requestedWindow = Math.max(50, listeningHistory.entries.length);
+    } else {
+      listeningHistory.entries = offset ? [...listeningHistory.entries, ...entries.filter(entry => !existingIds.has(entry.id))] : entries;
+    }
+    visibleQuery = query;
     listeningHistory.total = result.total;
-    listeningHistory.hasMore = result.hasMore;
+    listeningHistory.hasMore = reconcile ? result.total > listeningHistory.entries.length : result.hasMore;
     listeningHistory.error = '';
   } catch { /* enqueue reports a recoverable error; keep the visible list. */ }
   finally { if (revision === queryRevision) listeningHistory.loading = false; }
@@ -143,7 +159,7 @@ export function recordHistory(context: ListeningContext, index: number, cursor: 
   }
   if (window.musicHistory) {
     void persist([entry], undefined, true);
-    void searchHistory(listeningHistory.query, false, true);
+    void refreshHistory(listeningHistory.query, { retainLoaded: true, reconcile: true });
   } else {
     countEntry(entry, browserStats.values);
     saveHistory();
@@ -156,7 +172,11 @@ export function saveHistory(context?: ListeningContext) {
   if (window.musicHistory) { void persist(context ? [] : listeningHistory.entries, context); return; }
   persistenceTimer = setTimeout(() => { void persist(); }, 250);
 }
-export function retryHistory() { if (pendingClears.has(scope())) clearHistory(); else void persist(); void searchHistory(listeningHistory.query, false, true); }
+export function retryHistory() {
+  if (pendingClears.has(scope())) clearHistory();
+  else void persist();
+  void refreshHistory(listeningHistory.query, { retainLoaded: true, reconcile: true });
+}
 export function clearHistory() {
   loadHistory(); clearTimeout(persistenceTimer); queryRevision++; requestedWindow = 50;
   browserStats.values = {};
