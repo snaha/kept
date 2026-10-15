@@ -11,7 +11,7 @@ const run = (...command) => {
   const env = { ...process.env };
   if (started) delete env.AGENT_BROWSER_EXECUTABLE_PATH;
   started = true;
-  if (['click', 'focus'].includes(command[0]) && ['Library', 'Library filters', 'Layout', 'Background', 'Theme'].some(label => command[1] === `button[aria-label="${label}"]`)) {
+  if (['click', 'focus'].includes(command[0]) && ['Library', 'Library filters', 'Layout', 'Background', '3D', 'Theme'].some(label => command[1] === `button[aria-label="${label}"]`)) {
     const expanded = execFileSync(cli, [...args, 'eval', 'document.querySelector(".bar-modes > button").getAttribute("aria-expanded")'], { encoding: 'utf8', timeout: 30000, env }).trim();
     if (!expanded.includes('true')) execFileSync(cli, [...args, 'click', 'button[aria-label="Choose toolbar mode"]'], { encoding: 'utf8', timeout: 30000, env });
   }
@@ -218,14 +218,26 @@ try {
     run('click', button('Close settings'));
     assert(`!document.querySelector('.settings-dialog[open]') && document.activeElement.getAttribute('aria-label')==='Settings'`, 'X must close Settings and restore its visible trigger');
     run('click', button('Layout'));
-    run('click', '.controls button[aria-pressed]');
+    run('click', '.controls > button[aria-pressed]:first-of-type');
     run('focus', '[aria-label="Album columns"] [role="slider"]');
     run('press', 'ArrowRight');
     assert(`document.querySelector('[aria-label="Album columns"] [role="slider"]').getAttribute('aria-valuenow')==='7'`, 'Advanced columns slider must answer keyboard input');
     run('press', 'ArrowLeft');
     capture(size, 'advanced-layout');
-    run('click', '.controls button[aria-pressed]');
+    run('click', '.controls > button[aria-pressed]:first-of-type');
     assert(`!document.querySelector('.side') && !document.querySelector('.component-panel')`, 'Toolbar modes must replace stacked display menus and the theme drawer');
+    const glossButton = `[...document.querySelectorAll('.controls > button')].find(b => b.textContent.trim() === 'Gloss')`;
+    const glossed = `document.querySelectorAll('.tile .gloss').length === document.querySelectorAll('.tile').length`;
+    evaluate(`${glossButton}.click()`);
+    assert(`${glossButton}.getAttribute('aria-pressed')==='true' && ${glossed}`, 'Gloss must sheen every flat tile when on');
+    run('click', button('3D'));
+    run('click', '[aria-label="3D view"] button:nth-child(2)');
+    assert(`!document.querySelector('.tile .gloss') && !${glossButton}`, 'Gloss must leave the 3D views and hide its toggle');
+    run('click', '[aria-label="3D view"] button:nth-child(1)');
+    run('click', button('Layout'));
+    assert(`${glossButton}.getAttribute('aria-pressed')==='true' && ${glossed}`, 'Gloss must return with the flat grid');
+    evaluate(`${glossButton}.click()`);
+    assert(`${glossButton}.getAttribute('aria-pressed')==='false' && !document.querySelector('.tile .gloss')`, 'Gloss off must clear the sheen');
     run('click', button('Background'));
     assert(`!!document.querySelector('[role="radiogroup"][aria-label="Background"]') && !document.querySelector('[aria-label="Advanced grid size"]')`, 'Background must replace the secondary layout controls');
     assert(`document.querySelector('.bar-modes').getBoundingClientRect().right<=innerWidth && document.querySelector('.controls .group').getBoundingClientRect().right<=innerWidth`, 'Background mode must keep its toolbar and material strip within the viewport');
