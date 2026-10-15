@@ -1,5 +1,6 @@
 import { readPreference, writePreference } from './preferences';
 import { session } from './api.svelte';
+import { randomId } from './random-id';
 
 const USER = 'share';
 
@@ -12,7 +13,7 @@ export async function shareLink() {
   const d = window.desktop ? (await window.desktop.status()).share : undefined;
   let password = d?.password ?? readPreference('share.password');
   const fresh = !password;
-  if (!password) password = crypto.randomUUID().replace(/-/g, '');
+  if (!password) password = randomId();
 
   const { token } = (await api.navidromeSession()) as { token: string };
   const headers = { 'x-nd-authorization': `Bearer ${token}`, 'content-type': 'application/json' };
