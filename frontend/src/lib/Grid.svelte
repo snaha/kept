@@ -22,6 +22,7 @@
   import CoverFlow from './cover-flow.svelte'
   import './sleeve-finish.css'
   import DigPanel from './DigPanel.svelte';
+  import ControlSwitch from './ControlSwitch.svelte';
   import { catalog, dig, digActive, digScore, resetDig, metadata, warmColors, coverRevision } from './discovery.svelte';
   import CollectionDetails from './CollectionDetails.svelte';
   import Settings from './Settings.svelte';
@@ -362,6 +363,7 @@
         {/each}
       </div>
     </div>
+    <ControlSwitch />
     <button class="icon-button settings-trigger" aria-label="Settings" aria-pressed={player.view === 'settings'} title="Settings" onclick={() => open('settings')}><Icon name="settings" /></button>
   </div>
   {#if dig.open && !searching}<DigPanel matches={shown.length} total={sourceTiles.length} {tagged} onrandom={discover} />{/if}
