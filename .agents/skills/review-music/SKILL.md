@@ -12,9 +12,11 @@ is evidence for its assertions, not proof of native behavior or a completed visu
 
 1. Resolve the intended checkout, head, base and diff. Read [AGENTS.md](../../../AGENTS.md).
    Preserve unrelated working changes; do not silently review another checkout.
-2. Read the relevant sections of the [review runbook](../../../docs/application-review.md)
-   and [coverage ledger](../../../docs/regression-coverage.md). Use current code and
-   reviewer comments as evidence; old line references and historical passes may be stale.
+2. Use the [feature map](../../../docs/feature-map.md) to identify affected user
+   actions and neighboring features. Follow the [review runbook](../../../docs/application-review.md)
+   to draft their behavior table, then consult the [coverage ledger](../../../docs/regression-coverage.md).
+   Supplied comments can identify scope; derive expected outcomes from the product
+   contracts and callers. Resolve historical claims against the current candidate.
 3. For Svelte components/rune modules, use available Svelte code-writer and core
    best-practices skills. If unavailable, state the limitation and use the repo's
    Svelte/Vite pipeline and tests; do not invent skill results.
@@ -24,6 +26,12 @@ other people. Run validation when the user requests it; otherwise recommend the
 smallest relevant checks and identify unverified findings.
 
 ## Trace behavior
+
+Before using candidate tests or earlier review conclusions as correctness evidence,
+draft the affected behavior table from product contracts and current callers. Give each public action
+its own promise, relevant failure/overlap and cancellation owner. Update the table
+as tracing reveals more callers. Keep test evidence separate from intentional
+behavior changes; a request-count budget cannot define what Retry completes.
 
 Follow each changed operation through callers and consumers: input → view/state
 → catalog or player → desktop IPC → worker/store → completion and teardown.
@@ -66,6 +74,9 @@ Distinguish reproduced, code-established and unverified findings. Omit speculati
 findings when the caller already enforces the invariant.
 
 Then list validation performed (command, result, head, limitations), coverage gaps
-and scope decisions requiring discussion. If no findings remain, say so and still
+and scope decisions requiring discussion. Include the affected behavior table with
+per-row evidence (verified, code-reviewed or untested) and named checks; broad suite
+passes do not verify every row. Recheck those promises independently of the patch's
+tests before concluding. If no findings remain, say so and still
 state what was not exercised. Follow the runbook's prompt/report format; never
 label screenshots as approved without inspecting them against references.
