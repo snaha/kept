@@ -23,6 +23,9 @@ Component cases below live in
 | Duplicate tracks share current indicator/DOM identity; shuffle edits lose previous/successor | Component `preserves a queue row and keyboard focus`; desktop player checks exact collection occurrences, replay, shuffle move/removal/previous/next/current successor | UI indicators/actions in agent journey; audible continuity native |
 | Queued native media events undo newer pause/resume | Desktop player dispatches late play/pause events and asserts actual current state | Deterministic fake event order; application fixture uses real media elements |
 | Recorded play collapses history pages or enters a nonmatching query; retry truncates history | [history.test.js](../desktop/history.test.js) one-page request counts at 50/150/350/450 loaded rows, fully loaded hasMore, ID merge/tail order, filtered write/read failure and retry, deferred competing plays/query changes/clear/account responses, account/port changes | Real SQLite/compiled frontend; visible scroll needs browser journey |
+| Retry or a new play drops an explicit older-window request (`history.retry-pagination`, `history.play-during-pagination`) | [history.test.js](../desktop/history.test.js) filtered/unfiltered 150-row pending windows, obsolete read versus newer loading, nonmatching play, repeated failed reads/Retry, failed write plus pending pagination, contiguous following page | Four core outcome assertions failed at `03147eb` before the fix; ordinary play/write Retry still uses one page without pending pagination. Full-window reads are allowed to finish an explicit user request |
+| A canceled older-window request leaks into a new search/account or clear (`history.search`, `history.clear-account`) | Held older responses followed by new query, same-query reset, clear or account switch; failed changed-query search followed by Load older starts at offset zero | Real SQLite/compiled frontend via [history controls](../desktop/tests/history-harness.mjs); DOM focus/scroll and actual Electron IPC failures remain separate |
+| A lost write acknowledgement duplicates an event; test faults/resources outlive the case (`history.write-retry`) | Committed write response fails, Retry retains one event; teardown releases a held read, closes worker and restores globals | Real worker and persistence state; no audible/native playback claim |
 | One-page reconciliation retains a disconnected history tail and skips rows on pagination | [history.test.js](../desktop/history.test.js) next contiguous page after connected reconciliation and 60 plays during failed filtered reads; disconnected tail resets to one page before loading older rows | Real SQLite/compiled frontend; write-only playback and incremental stats remain a separate design follow-up |
 | Durable history loses duplicate position, repeats import or drops queued writes | [music-store.test.js](../desktop/music-store.test.js) search/old plays/duplicate context/idempotent import/reopen, worker serialization/close | Real SQLite/worker; browser-origin import still native |
 | Side effects start at import or outlive unmount | Component `starts side effects once and disposes preference subscriptions and pending playback` | Runtime ownership; native quit/child exit separate |
@@ -62,6 +65,43 @@ Component cases below live in
 - The mac-only repository launcher now uses package metadata and a platform guard.
   Build/native launch checks suit this change; a negative source-string test would
   not establish that the bundle actually runs.
+
+## PR #16 pagination fix and re-review — 16 October 2026
+
+Candidate started at `03147eb` (base `205e826`). The affected behavior table was
+drafted from the feature map/review workflow in local main commit `53f09d7` before
+changing runtime code. The branch imports that reusable history harness and its
+regression scenarios; the new workflow documentation remains in the main commit.
+Evidence, named checks and per-behavior results are in
+`.audit-results/pr16-fix-2026-10-16/` in the PR worktree.
+
+The four filtered/unfiltered Retry/playback-pagination cases failed at their
+intended outcome assertions before the runtime fix, then passed. All 17 history
+cases pass, including ownership cancellation, write acknowledgement recovery,
+the original request-cost depths and disconnected-tail contiguity. The complete
+desktop suite passes 39 cases plus 8 frontend helpers; frontend typechecking,
+25 browser components, fixture checks and frontend/preload builds also pass.
+
+The existing synthetic journey passes at 1920×1080, 1440×900, 1024×768 and
+390×844. Focused browser Retry probes at 1440×900 and 390×844 seed 400 durable
+rows, fail Load older at 150, hold Retry's response and verify 200 rows, the same
+focused keyed row and its screen position within one pixel. Removing the error
+banner legitimately changes absolute scrollTop while preserving the visible
+anchor; the initial stricter numeric-scroll assertion and diagnostics are retained.
+History screenshots at all four sizes and the two focused screenshots were
+inspected for obvious clipping/overlap; approved visual references are absent.
+
+The fix preserves an explicit pending window until its current response succeeds,
+or search/clear/account/disposal cancels it. New optimistic plays shift that
+window; repeated older-page attempts retry it rather than accumulating pages.
+Routine playback and write Retry retain their one-page cost without a pending
+user request. Incremental stats/write-only playback remain deferred.
+
+The disconnected-tail guard still intentionally resets to the authoritative first
+page after a long filtered-read outage. This remains a known conflict with loaded
+view preservation, not a result fixed by the pending-window changes. Long-history
+outage scroll/focus, physical touch, measured phone performance, live Spotify and
+native audible playback were not established by these module/component checks.
 
 ## Maintain the ledger
 
