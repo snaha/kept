@@ -134,7 +134,9 @@
   let pointerNearTop = $state(true), pointerObserved = $state(false), scrollRevealed = $state(false);
   let scrollRevealTimer: ReturnType<typeof setTimeout> | undefined;
   let leaveTimer: ReturnType<typeof setTimeout> | undefined;
-  const barShown = $derived(dig.open || toolbar.selecting || toolbar.mode !== 'library' || controlsFocused || !!rightView || overBrowse || scrollRevealed || (!touch && pointerObserved && pointerNearTop) || (!hidden && !player.topHidden && (touch || pointerNearTop)));
+  // The Share drawer owns the screen: the pointer at the top does not pull the header over it.
+  const nearTop = $derived(pointerNearTop && player.view !== 'share');
+  const barShown = $derived(dig.open || toolbar.selecting || toolbar.mode !== 'library' || controlsFocused || !!rightView || overBrowse || scrollRevealed || (!touch && pointerObserved && nearTop) || (!hidden && !player.topHidden && (touch || nearTop)));
   $effect(() => { if (!barShown) toolbar.selecting = false; });
   $effect(() => { document.documentElement.style.setProperty('--topbar', `${filterHeight}px`); });
   $effect(() => { document.documentElement.style.setProperty('--browsebar', `${barShown ? filterHeight : 0}px`); });
