@@ -19,6 +19,7 @@ import Queue from './Queue.svelte';
 import CollectionDetails from './CollectionDetails.svelte';
 import Settings from './Settings.svelte';
 import Grid from './Grid.svelte';
+import App from '../App.svelte';
 import type { Collection, Track } from './music';
 
 const tile: Collection = { id: 'local:album:a', rawId: 'a', source: 'local', kind: 'album', title: 'Album', sub: 'Artist', cover: '', count: 2, available: true };
@@ -450,4 +451,19 @@ describe('review regressions', () => {
       close.focus(); expect(document.activeElement).toBe(close);
     } finally { player.shortcutsOpen = false; bar.remove(); }
   });
+  for (const [shortcut, init] of [['/', {}], ['k', { ctrlKey: true }]] as const) {
+    it(`returns Escape from search opened with ${shortcut} in details to the opening tile`, async () => {
+      session.api = api({ getAlbumList2: vi.fn(async () => ok({ albumList2: { album: [{ id: 'a', name: 'Album', artist: 'Artist', songCount: 1 }] } })) });
+      render(App);
+      await vi.waitFor(() => expect(document.querySelector('.tile')).not.toBeNull());
+      const opener = document.querySelector<HTMLButtonElement>('.tile')!;
+      opener.focus(); opener.click();
+      await vi.waitFor(() => expect(document.activeElement?.closest('.album-view')).not.toBeNull());
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: shortcut, bubbles: true, cancelable: true, ...init }));
+      await vi.waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('Search library'));
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await tick();
+      expect(document.activeElement).toBe(document.querySelector('.tile'));
+    });
+  }
 });

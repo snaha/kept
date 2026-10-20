@@ -49,11 +49,12 @@
   let searchReturn: HTMLElement | null = null;
   let grid = $state.raw<{ closeDetails: () => void }>();
   async function focusSearch() {
-    searchReturn = document.activeElement as HTMLElement;
     grid?.closeDetails();
     player.view = ''; player.queueOpen = false; player.shortcutsOpen = false; wake();
     toolbar.mode = 'library'; toolbar.selecting = false;
     await tick();
+    // closing details has restored focus to its opener by now
+    searchReturn = document.activeElement as HTMLElement;
     const input = document.querySelector<HTMLInputElement>('[aria-label="Search library"]');
     input?.focus({ preventScroll: true }); input?.select();
   }
