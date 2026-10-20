@@ -9,6 +9,7 @@
   import { preferenceStatus } from './lib/preferences-status.svelte';
   import { retryPreferences, dismissPreferenceError } from './lib/preferences';
   import { catalog } from './lib/discovery.svelte';
+  import { restoreFocusOnClose, wrapArtworkTab } from './lib/artwork-focus';
   import { toolbar } from './lib/ui-style.svelte';
   import Grid from './lib/Grid.svelte';
   import Visualizer from './lib/Visualizer.svelte';
@@ -41,15 +42,19 @@
   function focusHelp(node: HTMLButtonElement) {
     const active = document.activeElement as HTMLElement | null;
     const previous = active?.closest('[aria-label="Playback options"]') ? document.querySelector<HTMLButtonElement>('button[aria-label="Playback options"]') : active;
+    const restore = restoreFocusOnClose(node, previous);
     node.focus({ preventScroll: true });
-    return { destroy() { if (previous?.isConnected && (document.activeElement === document.body || node.closest('.hint')?.contains(document.activeElement))) previous.focus({ preventScroll: true }); } };
+    return { destroy: restore };
   }
   let searchReturn: HTMLElement | null = null;
+  let grid = $state.raw<{ closeDetails: () => void }>();
   async function focusSearch() {
-    searchReturn = document.activeElement as HTMLElement;
+    grid?.closeDetails();
     player.view = ''; player.queueOpen = false; player.shortcutsOpen = false; wake();
     toolbar.mode = 'library'; toolbar.selecting = false;
     await tick();
+    // closing details has restored focus to its opener by now
+    searchReturn = document.activeElement as HTMLElement;
     const input = document.querySelector<HTMLInputElement>('[aria-label="Search library"]');
     input?.focus({ preventScroll: true }); input?.select();
   }
@@ -61,6 +66,7 @@
     const combo = e.metaKey || e.ctrlKey, key = e.key.toLowerCase();
     if (!e.altKey && !e.repeat && (combo ? key === 't' : key === 'v' && !editing)) { e.preventDefault(); player.visOpen = !player.visOpen; wake(); return; }
     if (player.visOpen) return; // the visualizer owns the keys while open
+    if (e.key === 'Tab') { wrapArtworkTab(e); return; }
     if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); void focusSearch(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'Escape') {
@@ -111,7 +117,7 @@
 {:else if !session.api}
   <Login />
 {:else}
-  <Grid tiles={library.tiles} onpick={pick} activeId={player.song?.albumId} hidden={idle} />
+  <Grid bind:this={grid} tiles={library.tiles} onpick={pick} activeId={player.song?.albumId} hidden={idle} />
   {#if player.shortcutsOpen}
     <aside class="hint" aria-label="Keyboard shortcuts">
       <div class="hint-title"><strong>Keyboard shortcuts</strong><button use:focusHelp onclick={() => (player.shortcutsOpen = false)} aria-label="Close keyboard shortcuts">×</button></div>

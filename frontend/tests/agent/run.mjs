@@ -59,6 +59,20 @@ try {
     assert(`!window.__auditCommands.some(c=>c[0]==='play') && document.querySelector('.album-view .detail-cover')`, 'Cover must open album details without starting playback');
     capture(size, 'album-details');
     run('click', button('Back to music'));
+    for (const shortcut of ['/', 'Control+k']) {
+      run('click', '.tile-wrap:first-child .tile');
+      run('wait', '.album-view');
+      run('press', shortcut);
+      assert(`!document.querySelector('.album-view') && document.activeElement.getAttribute('aria-label')==='Search library'`, 'Search shortcuts must close album details before focusing the library');
+      run('press', 'Escape');
+    }
+    run('click', '.tile-wrap:first-child .tile');
+    run('wait', '.album-view');
+    run('press', 'q');
+    run('wait', '.now-playing');
+    run('press', 'Escape');
+    run('wait', '--fn', '!document.querySelector(".now-playing")');
+    assert(`document.activeElement.classList.contains('bar-toggle')`, 'Details to Queue to Escape must restore playback focus after the details opener disappears');
     run('hover', '.tile-wrap:first-child');
     run('click', '.tile-wrap:first-child .tile-play button');
     run('wait', '--fn', '!!document.querySelector(".tile-wrap.listening")');
@@ -70,7 +84,17 @@ try {
     run('focus', '.bar-toggle');
     clickBarBackground();
     run('wait', '.now-playing');
-    assert(`[...document.querySelectorAll('.browse,.scroll,.empty-library,.results')].every(element=>element.inert)`, 'Player must isolate covered library controls while playback controls remain available');
+    assert(`[...document.querySelectorAll('.browse,.scroll,.empty-library,.results')].every(element=>element.closest('[inert]'))`, 'Player must isolate covered library controls while playback controls remain available');
+    for (let index=0; index<20; index++) {
+      run('press', 'Tab');
+      assert(`document.hasFocus() && document.activeElement!==document.body && !document.activeElement.closest('.browse,.scroll,.empty-library')`, 'Artwork keyboard navigation must retain a focus owner outside covered content');
+    }
+    assert(`!document.querySelector('.bar').inert`, 'Artwork must keep playback available');
+    run('press', 'v');
+    run('wait', '.vis:not(.bg)');
+    run('press', 'v');
+    run('wait', '--fn', '!document.querySelector(".vis:not(.bg)")');
+    assert(`document.querySelector('.now-playing') && document.hasFocus()`, 'Visualizer shortcut must open and close while artwork keeps its focus boundary');
     assert(`document.querySelector('.now-playing .detail-cover') !== null`, 'The full-width bar target must open now playing with large artwork');
     assert(`getComputedStyle(document.querySelector('.bar')).getPropertyValue('--play-surface').trim() !== ''`, 'Player must share its artwork palette');
     assert(`document.documentElement.scrollWidth<=innerWidth`, 'Now playing must fit the viewport');
@@ -135,7 +159,15 @@ try {
     assert(`!document.querySelector('.settings-dialog[open]')`, 'Escape must close Settings');
     run('press', '?');
     assert(`!!document.querySelector('[aria-label="Keyboard shortcuts"]')`, 'Shortcut help must be discoverable');
+    assert(`!document.querySelector('.scroll').inert && !document.querySelector('.browse').inert`, 'Non-modal shortcuts must leave the library interactive');
     capture(size, 'keyboard-help');
+    run('press', 'Escape');
+    run('click', button('Menu'));
+    run('focus', 'button[aria-label="Playback options"]');
+    run('press', '?');
+    assert(`!document.querySelector('.now-playing').inert && document.activeElement.getAttribute('aria-label')==='Close keyboard shortcuts'`, 'Shortcuts must take initial focus without disabling Queue');
+    run('press', 'Escape');
+    assert(`!document.querySelector('.now-playing').inert && document.activeElement.getAttribute('aria-label')==='Playback options'`, 'Closing shortcuts must restore its Queue opener');
     run('press', 'Escape');
     run('click', button('Menu'));
     run('focus', 'button[aria-label="Playback options"]');

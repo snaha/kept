@@ -70,7 +70,9 @@
   function sortChanged() { if (sort === 'random') randomSeed = Math.random(); applySort(); }
   let favoritesOnly = $state(false);
   let details = $state.raw<Tile | null>(null);
+  export function closeDetails() { details = null; }
   $effect(() => { if (player.queueOpen || player.visOpen || player.view === 'share') details = null; });
+  const covered = $derived(!!details || player.queueOpen);
   const currentDetails = $derived.by(() => { const selected = details; return selected ? library.tiles.find(tile => tile.id === selected.id) || selected : null; });
   const filtersOpen = $derived(toolbar.mode === 'filters');
   let discoveryId = $state('');
@@ -171,7 +173,7 @@
   }
 </script>
 
-<div class="browse" class:hidden={!barShown} class:selecting={toolbar.selecting}
+<div class="browse" inert={covered} class:hidden={!barShown} class:selecting={toolbar.selecting}
   onpointerenter={event => (overBrowse = event.pointerType === 'mouse')} onpointerleave={() => (overBrowse = false)} bind:clientHeight={filterHeight} role="region" aria-label="Library toolbar">
   <div class="compact-bar">
     <label class="browse-search"><Icon name="search" /><input type="search" aria-label="Search library" placeholder="Search albums, songs, artists…" maxlength="500" bind:value={query} oninput={filterChanged} onkeydown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); query = ''; filterChanged(); } }} aria-keyshortcuts="/ Control+k Meta+k" autocomplete="off" spellcheck="false" /></label>
@@ -244,7 +246,7 @@
   ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); const f = e.dataTransfer?.files[0]; if (f) importBackground(f); }} />
 
 <!-- the material sits on the cards' layer so it scrolls and drifts with them, or on the fixed viewport behind them -->
-<div class="scroll" class:fill={!bg.tile} class:m-vinyl={!bg.scroll && bg.material === 'vinyl'} class:m-grille={!bg.scroll && bg.material === 'grille'}
+<div class="scroll" inert={covered} class:fill={!bg.tile} class:m-vinyl={!bg.scroll && bg.material === 'vinyl'} class:m-grille={!bg.scroll && bg.material === 'grille'}
   class:m-fabric={!bg.scroll && bg.material === 'fabric'} class:m-custom={!bg.scroll && (bg.material === 'custom' || bg.material === 'noise')} style:--custom={bg.material === 'noise' ? `url("${noiseBackground}")` : bg.custom ? `url("${bg.custom}")` : 'none'} {onscroll} onwheel={(e) => { if (e.deltaY < 0 && scrollTop <= 4) revealAtTop(); }} bind:this={scroller} bind:clientWidth={viewportWidth} bind:clientHeight={viewportHeight}>
   {#if searching}
     <CatalogSearch bind:kind={searchKind} top={filterHeight} cols={effectiveCols} gap={pixelGap} card={collectionCard}
@@ -263,7 +265,7 @@
 </div>
 
 {#if !searching && !shown.length && !library.loading}
-  <div class="empty-library">
+  <div class="empty-library" inert={covered}>
     {#if window.desktop && !library.tiles.length && !desktop.status?.musicFolder}
       <h2>Your music starts here.</h2>
       <p>Add a music folder to start your collection.</p>
