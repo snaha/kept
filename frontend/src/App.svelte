@@ -47,9 +47,8 @@
     return { destroy: restore };
   }
   let searchReturn: HTMLElement | null = null;
-  let grid = $state.raw<{ closeDetails: () => void }>();
   async function focusSearch() {
-    grid?.closeDetails();
+    library.details = null;
     player.view = ''; player.queueOpen = false; player.shortcutsOpen = false; wake();
     toolbar.mode = 'library'; toolbar.selecting = false;
     await tick();
@@ -117,7 +116,7 @@
 {:else if !session.api}
   <Login />
 {:else}
-  <Grid bind:this={grid} tiles={library.tiles} onpick={pick} activeId={player.song?.albumId} hidden={idle} />
+  <Grid tiles={library.tiles} onpick={pick} activeId={player.song?.albumId} hidden={idle} />
   {#if player.shortcutsOpen}
     <aside class="hint" aria-label="Keyboard shortcuts">
       <div class="hint-title"><strong>Keyboard shortcuts</strong><button use:focusHelp onclick={() => (player.shortcutsOpen = false)} aria-label="Close keyboard shortcuts">×</button></div>

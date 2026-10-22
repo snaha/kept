@@ -22,6 +22,9 @@
   const shown = $derived(tracks.map((track, index) => ({ track, index })).filter(({ track }) => `${track.title} ${track.artist ?? ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
   const totalSeconds = $derived(tracks.reduce((sum, track) => sum + (track.duration ?? 0), 0));
   const genreYear = $derived([...info.genres, ...(info.year ? [String(info.year)] : [])].join(' • '));
+  // once the heading has scrolled under the top row, the title sits in the row instead
+  let heading = $state<HTMLElement>(), collapsed = $state(false);
+  function onscroll() { if (heading) collapsed = heading.getBoundingClientRect().bottom <= (heading.closest('.album-view')?.querySelector('header')?.getBoundingClientRect().bottom ?? 0); }
   $effect(() => { const cover = tile.cover; let active = true; void artworkPalette(cover).then(value => { if (active) palette = value; }); return () => { active = false; }; });
   $effect(() => {
     requestKey;
@@ -92,30 +95,25 @@
     else onclose();
   }
   const fmt = (s = 0) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+  const total = (s: number) => { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr ${m % 60} min`; };
 </script>
 <svelte:window onclick={event => {
   if (nativePopovers || !openTrackMenu || (event.target instanceof Element && event.target.closest('[data-track-actions], [data-actions-for]'))) return;
   const menu = document.getElementById(openTrackMenu);
   if (menu) dismissTrackMenu(menu, false);
 }} onscrollcapture={() => { const menu = openTrackMenu ? document.getElementById(openTrackMenu) : null; if (menu) dismissTrackMenu(menu, false); }} />
-<AlbumView className="album-view" {palette} label={`${tile.title} details`} onkeydown={keys}>
+<AlbumView className="album-view" {palette} label={`${tile.title} details`} onkeydown={keys} {onscroll}>
   {#snippet header()}
     <div class="album-header">
       <div class="header-row">
         <button class="icon-btn back" onclick={onclose} aria-label="Back to music"><Icon name="back" size={16} /></button>
+        {#if collapsed}<span class="compact-title" aria-hidden="true">{tile.title}</span>{/if}
         <div class="menu-anchor">
           <button class="icon-btn menu-trigger" aria-label="Album menu" aria-expanded={actions} aria-controls="album-actions" aria-haspopup="menu" onclick={toggleActions}><Icon name="more-vertical" size={16} /></button>
           {#if actions}<div class="action-menu" id="album-actions" role="menu" aria-label="Album actions" use:keyboardScope={actionKeys}>
             <button role="menuitem" disabled={!tracks.some(track => track.available)} onclick={() => { void addCollection(tile); actions = false; }}>Add to queue</button>
             <button role="menuitem" onclick={() => { preferences = !preferences; actions = false; }}>Album preferences &amp; Dig tags</button>
           </div>{/if}
-        </div>
-      </div>
-      <div class="heading">
-        <h1>{tile.title}</h1>
-        <div class="heading-meta">
-          <p class="artist">{tile.sub}</p>
-          {#if genreYear}<p class="genre-year">{genreYear}</p>{/if}
         </div>
       </div>
     </div>
@@ -131,6 +129,13 @@
       {#if preferences}<AlbumTraits {tile} />{/if}
     </div>
   {/snippet}
+  <div class="heading" bind:this={heading}>
+    <h1>{tile.title}</h1>
+    <div class="heading-meta">
+      <p class="artist">{tile.sub}</p>
+      {#if genreYear}<p class="genre-year">{genreYear}</p>{/if}
+    </div>
+  </div>
   <div class="actions">
     {#if loading || tracks.some(track => track.available)}<CollectionPlayback collection={tile} onplay={() => { void pick(tile); }} />{/if}
     <!-- shuffle is the player's own order, so Play starts shuffled; there is no repeat mode in the player yet, so no repeat control -->
@@ -164,19 +169,20 @@
       {/each}
       {#if !shown.length && !loading && !error}<p class="notice">{query ? 'No tracks match your search.' : 'No music tracks in this collection.'}</p>{/if}
     </div>
-  {#if tracks.length}<p class="album-count">{tracks.length} {tracks.length === 1 ? 'song' : 'songs'} • {Math.max(1, Math.round(totalSeconds / 60))} min{#if loading} · Loading…{/if}</p>{/if}
+  {#if tracks.length}<p class="album-count">{tracks.length} {tracks.length === 1 ? 'song' : 'songs'} • {total(totalSeconds)}{#if loading} · Loading…{/if}</p>{/if}
 </AlbumView>
 <style>
 
   button { font: inherit; color: inherit; cursor: pointer; } button:disabled { opacity: .4; cursor: default; }
-  .album-header { display: flex; flex-direction: column; gap: 32px; padding: 32px 32px 16px; }
+  .album-header { padding: 32px 32px 0; }
   .header-row { display: flex; align-items: center; gap: 8px; }
   .icon-btn { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; padding: 0; border: 0; border-radius: 10px; background: transparent; }
   .icon-btn:hover { background: var(--play-line); }
   .back { border: 1px solid var(--play-line); background: color-mix(in srgb, var(--play-text) 12%, transparent); }
   .menu-anchor { position: relative; margin-left: auto; }
   .action-menu { position: absolute; right: 0; top: 40px; width: 255px; z-index: 1; background: var(--play-bar); padding: 6px; border: 1px solid var(--play-line); box-shadow: 0 10px 25px #0004; border-radius: 10px; } .action-menu button { display: block; width: 100%; min-height: 40px; padding: 8px 12px; border: 0; background: transparent; text-align: left; } .action-menu button:hover { background: var(--play-line); }
-  .heading { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .compact-title { min-width: 0; font-size: 18px; line-height: 28px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .heading { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-top: 32px; }
   h1 { margin: 0; font-size: 30px; line-height: 36px; font-weight: 700; overflow-wrap: anywhere; }
   .heading-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .artist { flex: 1 1 0; min-width: 0; margin: 0; font-size: 18px; line-height: 28px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -204,7 +210,8 @@
   .detail-cover { display: block; width: min(100%, calc(100dvh - var(--botbar, 60px) - 64px)); aspect-ratio: 1; object-fit: contain; border-radius: 2px; }
   .no-art.detail-cover { display: grid; place-items: center; background: var(--play-bar); padding: 24px; box-sizing: border-box; text-align: center; overflow-wrap: anywhere; }
   @media (max-width: 700px) {
-    .album-header { gap: 24px; padding: 16px 16px 0; }
+    .album-header { padding: 16px 16px 0; }
+    .heading { padding-top: 24px; }
     h1 { font-size: 18px; line-height: 24px; }
     .artist { font-size: 15px; line-height: 22px; }
     .actions { flex-wrap: wrap; row-gap: 12px; padding-top: 24px; }
