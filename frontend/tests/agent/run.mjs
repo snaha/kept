@@ -36,6 +36,7 @@ try {
     run('set', 'viewport', String(width), String(height));
     run('open', process.env.MUSIC_AUDIT_URL || `http://127.0.0.1:${process.env.MUSIC_AUDIT_PORT || 4178}`);
     run('wait', '.tile-wrap');
+    assert(`document.querySelector('[aria-label="Sort library"]').value==='Artist name'`, 'Library must open sorted by artist');
     run('mouse', 'move', '0', '0');
     run('wait', '200');
     assert(`getComputedStyle(document.querySelector('.tile-info')).opacity === '0'`, 'Details must be hidden initially');
@@ -184,7 +185,11 @@ try {
     capture(size, 'artist-dropdown');
     run('click', '[role="option"]');
     assert(`document.querySelector('[aria-label="Filter by artist"]').value==='David Bowie'`, 'Artist selection must apply');
+    run('fill', '[aria-label="Sort library"]', 'Album title');
+    run('click', '[role="option"]');
+    assert(`document.querySelector('[aria-label="Sort library"]').value==='Album title'`, 'Sort selection must apply');
     run('click', '.filter-tray [data-slot="button"]');
+    assert(`document.querySelector('[aria-label="Sort library"]').value==='Artist name' && document.querySelector('[aria-label="Filter by artist"]').value==='All artists'`, 'Reset filters must return to the artist sort');
     run('click', button('Settings'));
     run('wait', '500');
     assert(`document.querySelector(${JSON.stringify(button('Settings'))}).getAttribute('aria-pressed')==='true'`, 'Settings must show selected state');

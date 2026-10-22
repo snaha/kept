@@ -61,7 +61,8 @@
     return untrack(() => startCatalogSearch(term, source));
   });
   let artistFilter = $state('');
-  let sort = $state('artist'), sortDirection = $state(1), sortRevision = $state(0), randomSeed = $state(Math.random());
+  const DEFAULT_SORT = 'artist';
+  let sort = $state(DEFAULT_SORT), sortDirection = $state(1), sortRevision = $state(0), randomSeed = $state(Math.random());
   let showFilter = $state('all');
   let collectionMode = $derived<string>(library.mode);
   let colorOrder = $state.raw<Record<string, number>>({});
@@ -105,7 +106,7 @@
   function filterChanged() { scrollTop = 0; details = null; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
   function changeMode(mode: Mode) { artistFilter = ''; favoritesOnly = false; filterChanged(); void setMode(mode); }
   function changeSource() { artistFilter = ''; filterChanged(); }
-  function resetFilters() { query = ''; artistFilter = ''; library.source = 'all'; sort = 'artist'; sortDirection = 1; showFilter = 'all'; favoritesOnly = false; coversOnly = false; resetDig(); filterChanged(); }
+  function resetFilters() { query = ''; artistFilter = ''; library.source = 'all'; sort = DEFAULT_SORT; sortDirection = 1; showFilter = 'all'; favoritesOnly = false; coversOnly = false; resetDig(); filterChanged(); }
 
   let viewportWidth = $state(innerWidth), viewportHeight = $state(innerHeight), scrollTop = $state(0);
   const pixelGap = $derived(Math.max(0.2, gap * (viewportWidth + (innerWidth - viewportWidth)) / 3312));
