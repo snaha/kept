@@ -16,7 +16,7 @@ class LibraryState {
   loading = $state(false);
   error = $state('');
   source = $state<'all' | 'local'>('all');
-  scan = $state({ scanning: false, count: 0, checked: false, error: '' });
+  scan = $state({ scanning: false, count: 0, checked: false, error: '', pending: false, startError: '' });
 }
 export const library = new LibraryState();
 let localTiles: Tile[] = [], req = 0, pickRequest = 0, listing = true;
@@ -57,6 +57,18 @@ export async function setMode(mode: Mode, refresh = false) {
 
 // Navidrome extends the Subsonic scan status with completion and failure details.
 type LibraryScanStatus = ScanStatus & { lastScan?: string | Date; error?: string };
+// A scan request owns the scan buttons until a poll that began after the start answered has reported: the gap before
+// the watcher sees the scan, or a library refresh skipping polls, must not let a second start through. A failed start
+// releases them and reports why in `startError`, which lives here so it outlives Settings. The request remembers the
+// account (api) it was made for: an account change drops another account's request with the rest of the scan state,
+// but keeps one made for the new account before the watcher noticed the change
+let polls = 0, scanRequested = -1, scanOwner: typeof session.api = null;
+export async function requestScan(full: boolean): Promise<void> {
+  const api = session.api; if (!api || library.scan.pending) return;
+  library.scan.pending = true; library.scan.startError = ''; scanRequested = Infinity; scanOwner = api;
+  try { ok(await api.startScan({ fullScan: full })); if (api === session.api) scanRequested = polls; }
+  catch (error) { if (api !== session.api) return; library.scan.pending = false; scanRequested = -1; library.scan.startError = `The scan could not start: ${(error as Error).message}`; }
+}
 export function watchScan() {
   let busy = false, stopped = false, lastApi: typeof session.api = null;
   let previous: { scanning: boolean; count: number; lastScan: string } | undefined;
@@ -66,16 +78,19 @@ export function watchScan() {
     const api = session.api;
     if (api !== lastApi) {
       lastApi = api; previous = undefined; refreshPending = false; lastRefresh = Number.NEGATIVE_INFINITY;
-      library.scan = { scanning: false, count: 0, checked: false, error: '' };
+      const mine = scanOwner === api;
+      if (!mine) scanRequested = -1;
+      library.scan = { scanning: false, count: 0, checked: false, error: '', pending: mine && library.scan.pending, startError: mine ? library.scan.startError : '' };
     }
     if (!api) return;
     busy = true;
+    const poll = ++polls;
     try {
       const s: LibraryScanStatus = ok(await api.getScanStatus()).scanStatus;
       if (stopped || api !== session.api) return;
       const next = { scanning: s.scanning, count: s.count ?? 0, lastScan: String(s.lastScan ?? '') };
       library.scan = { scanning: next.scanning, count: next.count, checked: true,
-        error: s.error ? `Music indexing failed: ${s.error}` : '' };
+        error: s.error ? `Music indexing failed: ${s.error}` : '', pending: library.scan.pending && poll <= scanRequested, startError: library.scan.startError };
       // A small scan can finish before the first poll, or entirely between polls.
       // Refresh the first snapshot and any completed scan, even without seeing it start.
       if (!previous || previous.count !== next.count || previous.lastScan !== next.lastScan || (previous.scanning && !next.scanning)) { refreshPending = true; library.revision++; }

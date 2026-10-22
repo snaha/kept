@@ -3,6 +3,8 @@
   import Button from './ui/button.svelte';
   import LibrarySelect from './ui/library-select.svelte';
   import { desktop } from './desktop.svelte';
+  import { session } from './api.svelte';
+  import { library, requestScan } from './library.svelte';
   let { portalTarget }: { portalTarget?: Element } = $props();
   let profiles = $state<ProfileEntry[]>([]), name = $state(''), busy = $state(''), error = $state('');
   const status = $derived(desktop.status);
@@ -20,6 +22,12 @@
     catch (failure) { error = (failure as Error).message; }
     finally { busy = ''; }
   }
+  // the library owns the scan request and its polling; the buttons stay in place and keep focus while they wait
+  const scanBlocked = $derived(!session.api || library.scan.pending || library.scan.scanning);
+  // what the scan is doing, or why it could not start or be checked, on a line that is always there so the sections below never move
+  const scanStatus = $derived(!session.api ? '' : library.scan.startError || library.scan.error || (library.scan.scanning ? 'Indexing…' : library.scan.pending ? 'Starting a scan…' : ''));
+  const scanFailed = $derived(!!(library.scan.startError || library.scan.error));
+  function scan(full: boolean) { if (!scanBlocked) void requestScan(full); }
 </script>
 
 {#if status}
@@ -36,6 +44,11 @@
       <Button variant="ghost" disabled={!!busy} onclick={() => folder('replace')}>Replace music folders</Button>
       <Button variant="ghost" onclick={async () => { const problem = await window.desktop!.showData(); if (problem) error = problem; }}>Show data folder</Button>
     </div>
+    <div class="actions">
+      <Button variant="ghost" aria-disabled={scanBlocked} onclick={() => scan(false)}>Scan for changes</Button>
+      <Button variant="ghost" aria-disabled={scanBlocked} onclick={() => scan(true)}>Full rescan</Button>
+    </div>
+    <p class="scan-status" class:error={scanFailed} role={scanFailed ? 'alert' : 'status'}>{scanStatus}</p>
     <details>
       <summary>Preview profiles</summary>
       <p>A fresh profile starts with setup. Copying keeps your normal Music data separate. Switching profiles restarts the app.</p>
@@ -72,6 +85,9 @@
   .folder-row { display: flex; align-items: center; gap: 12px; }
   .folder-row > span { flex: 1; min-width: 0; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .actions + .actions { margin-top: 12px; }
+  .actions :global([aria-disabled="true"]) { opacity: .5; cursor: default; }
+  .scan-status { min-height: 21px; margin-top: 12px; }
   details { border-top: 1px solid var(--ui-border); }
   summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; font-weight: 550; cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
