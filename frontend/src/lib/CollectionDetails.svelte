@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
+  import { fly } from 'svelte/transition';
+  import { prefersReducedMotion } from 'svelte/motion';
   import { keyboardScope } from './keyboard';
   import { library, trackPages, pick, addCollection, grid, type Tile } from './library.svelte';
   import { collectionTrackIsCurrent, play, player, toggle, enqueue, setOrder } from './player.svelte';
@@ -107,7 +109,7 @@
     <div class="album-header">
       <div class="header-row">
         <button class="icon-btn back" onclick={onclose} aria-label="Back to music"><Icon name="back" size={16} /></button>
-        {#if collapsed}<span class="compact-title" aria-hidden="true">{tile.title}</span>{/if}
+        {#if collapsed}<span class="compact-title" aria-hidden="true" transition:fly={{ y: 12, duration: prefersReducedMotion.current ? 0 : 200 }}>{tile.title}</span>{/if}
         <div class="menu-anchor">
           <button class="icon-btn menu-trigger" aria-label="Album menu" aria-expanded={actions} aria-controls="album-actions" aria-haspopup="menu" onclick={toggleActions}><Icon name="more-vertical" size={16} /></button>
           {#if actions}<div class="action-menu" id="album-actions" role="menu" aria-label="Album actions" use:keyboardScope={actionKeys}>

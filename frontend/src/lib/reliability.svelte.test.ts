@@ -448,7 +448,7 @@ describe('review regressions', () => {
     expect(content.scrollTop).toBeGreaterThan(0);
     expect(document.querySelector('.compact-title')?.textContent).toBe('Long Album');
     content.scrollTop = 0; content.dispatchEvent(new Event('scroll')); await tick();
-    expect(document.querySelector('.compact-title')).toBeNull();
+    await vi.waitFor(() => expect(document.querySelector('.compact-title')).toBeNull()); // it drops back out of the row
   });
   it('lets the real Settings modal own focus above Queue and restores the queue control', async () => {
     play([track]);
