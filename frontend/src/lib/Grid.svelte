@@ -71,11 +71,10 @@
   function applySort() { colorOrder = Object.fromEntries(sourceTiles.map(tile => [tile.id, catalog.colors[tile.id]?.hue ?? 361])); sortRevision++; filterChanged(); }
   function sortChanged() { if (sort === 'random') randomSeed = Math.random(); applySort(); }
   let favoritesOnly = $state(false);
-  let details = $state.raw<Tile | null>(null);
-  export function closeDetails() { details = null; }
-  $effect(() => { if (player.queueOpen || player.visOpen || player.view === 'share') details = null; });
-  const covered = $derived(!!details || player.queueOpen);
-  const currentDetails = $derived.by(() => { const selected = details; return selected ? library.tiles.find(tile => tile.id === selected.id) || selected : null; });
+  // the album view stays under the visualizer, as the expanded player does
+  $effect(() => { if (player.queueOpen) library.details = null; }); // share and the visualizer open over the album, it stays underneath
+  const covered = $derived(!!library.details || player.queueOpen);
+  const currentDetails = $derived.by(() => { const selected = library.details; return selected ? library.tiles.find(tile => tile.id === selected.id) || selected : null; });
   const filtersOpen = $derived(toolbar.mode === 'filters');
   let discoveryId = $state('');
   const activeFilters = $derived(Number(!!artistFilter) + Number(showFilter !== 'all') + Number(digActive()));
@@ -106,7 +105,7 @@
   }));
   const shown = $derived(view.collections);
   onMount(() => registerBrowseSource(() => searching ? catalogSearch.collections : view.collections));
-  function filterChanged() { scrollTop = 0; details = null; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
+  function filterChanged() { scrollTop = 0; library.details = null; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
   function changeMode(mode: Mode) { artistFilter = ''; favoritesOnly = false; filterChanged(); void setMode(mode); }
   function changeSource() { artistFilter = ''; filterChanged(); }
   function resetFilters() { query = ''; artistFilter = ''; library.source = 'all'; sort = DEFAULT_SORT; sortDirection = 1; showFilter = 'all'; favoritesOnly = false; coversOnly = false; resetDig(); filterChanged(); }
@@ -173,11 +172,11 @@
   const barShown = $derived(dig.open || toolbar.selecting || toolbar.mode !== 'library' || controlsFocused || !!rightView || overBrowse || scrollRevealed || (!touch && pointerObserved && pointerNearTop) || (!hidden && !player.topHidden && (touch || pointerNearTop)));
   $effect(() => { if (!barShown) toolbar.selecting = false; });
   $effect(() => { document.documentElement.style.setProperty('--topbar', `${filterHeight}px`); });
-  $effect(() => { document.documentElement.style.setProperty('--browsebar', `${barShown ? filterHeight : 0}px`); });
+  $effect(() => { document.documentElement.style.setProperty('--browsebar', `${barShown && !library.details ? filterHeight : 0}px`); });
   $effect(() => { document.documentElement.style.setProperty('--sidebar', '0px'); });
   function chromeFocus(target: EventTarget | null) {
     controlsFocused = target instanceof Element && !!target.closest('.browse, .library-select-menu') && target.matches(':focus-visible');
-    if (target instanceof Element && target.matches('[aria-label="Search library"]')) { details = null; toolbar.mode = 'library'; }
+    if (target instanceof Element && target.matches('[aria-label="Search library"]')) { library.details = null; toolbar.mode = 'library'; }
   }
   let settingsTab = $state('appearance');
   function open(view: 'settings') { settingsTab = 'appearance'; player.viewFrom = 'right'; player.view = rightView === view ? '' : view; closeModes(); }
@@ -260,10 +259,10 @@
 {#snippet collectionCard(t: Tile, index = -1)}
       {@const playback = collectionPlayback(t)}
       <div class="tile-wrap" class:coverless={!t.cover} class:discovered={t.id === discoveryId} class:current={playback.current} class:listening={playback.listening}>
-        <button class="tile" class:active={playback.listening} onclick={() => { details = t; player.queueOpen = false; player.view = ''; }} aria-label="Open {t.title} — {t.sub}" aria-current={playback.current ? 'true' : undefined}>
+        <button class="tile" class:active={playback.listening} onclick={() => { library.details = t; player.queueOpen = false; player.view = ''; }} aria-label="Open {t.title} — {t.sub}" aria-current={playback.current ? 'true' : undefined}>
           {#if t.cover && (warmed.has(t.cover) || near(index))}<img src={t.cover} alt="" draggable="false" onload={() => warmed.add(t.cover)} />{/if}
         </button>
-        <div class="tile-play"><CollectionPlayback collection={t} compact onplay={() => { if (!t.available) details = t; else pick(t); }} /></div>
+        <div class="tile-play"><CollectionPlayback collection={t} compact onplay={() => { if (!t.available) library.details = t; else pick(t); }} /></div>
         <div class="tile-info"><span class="tile-title">{t.title}<small>{t.sub}</small></span></div>
       </div>
 {/snippet}
@@ -271,7 +270,7 @@
 <!-- an image dropped anywhere becomes the custom background -->
 <svelte:window onkeydown={e => {
   if (e.key !== 'Escape' || e.defaultPrevented || player.view || player.queueOpen || player.visOpen) return;
-  if (details) details = null;
+  if (library.details) library.details = null;
   else if (dig.open) { dig.open = false; document.querySelector<HTMLButtonElement>('[aria-label="Dig into your music"]')?.focus(); }
   else if (toolbar.mode !== 'library') { backToSelector(); document.querySelector<HTMLButtonElement>('[aria-label="Choose toolbar mode"]')?.focus(); }
   else return;
@@ -319,7 +318,7 @@
 
 {#if library.scan.scanning}<div class="scan">indexing… {library.scan.count} songs</div>{/if}
 {#if library.loading}<div class="library-status" role="status">Loading music…</div>{/if}
-{#if currentDetails}{#key currentDetails.id}<CollectionDetails tile={currentDetails} onclose={() => (details = null)} />{/key}{/if}
+{#if currentDetails}{#key currentDetails.id}<CollectionDetails tile={currentDetails} onclose={() => (library.details = null)} />{/key}{/if}
 {#if library.error || library.scan.error}<div class="library-status" role="alert">{library.error || library.scan.error}</div>{/if}
 
 {#if player.view === 'settings'}<Settings bind:coversOnly bind:motion initialTab={settingsTab} onclose={() => (player.view = '')} />{/if}

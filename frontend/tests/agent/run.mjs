@@ -84,8 +84,9 @@ try {
     assert(`!document.querySelector('.now-playing')`, 'Transport must control playback without opening the player');
     run('focus', '.bar-toggle');
     clickBarBackground();
-    run('wait', '.now-playing');
-    assert(`[...document.querySelectorAll('.browse,.scroll,.empty-library,.results')].every(element=>element.closest('[inert]'))`, 'Player must isolate covered library controls while playback controls remain available');
+    run('wait', '.album-view');
+    assert(`document.querySelector('.album-view h1').textContent===document.querySelector('.tile-wrap.current .tile').getAttribute('aria-label').replace(/^Open /, '').split(' — ')[0]`, 'The full-width bar target must open the playing album');
+    assert(`[...document.querySelectorAll('.browse,.scroll,.empty-library,.results')].every(element=>element.closest('[inert]'))`, 'The album view must isolate covered library controls while playback controls remain available');
     for (let index=0; index<20; index++) {
       run('press', 'Tab');
       assert(`document.hasFocus() && document.activeElement!==document.body && !document.activeElement.closest('.browse,.scroll,.empty-library')`, 'Artwork keyboard navigation must retain a focus owner outside covered content');
@@ -95,10 +96,16 @@ try {
     run('wait', '.vis:not(.bg)');
     run('press', 'v');
     run('wait', '--fn', '!document.querySelector(".vis:not(.bg)")');
-    assert(`document.querySelector('.now-playing') && document.hasFocus()`, 'Visualizer shortcut must open and close while artwork keeps its focus boundary');
-    assert(`document.querySelector('.now-playing .detail-cover') !== null`, 'The full-width bar target must open now playing with large artwork');
+    assert(`document.querySelector('.album-view') && document.hasFocus()`, 'Visualizer shortcut must open and close while artwork keeps its focus boundary');
     assert(`getComputedStyle(document.querySelector('.bar')).getPropertyValue('--play-surface').trim() !== ''`, 'Player must share its artwork palette');
-    assert(`document.documentElement.scrollWidth<=innerWidth`, 'Now playing must fit the viewport');
+    assert(`document.documentElement.scrollWidth<=innerWidth`, 'The album view must fit the viewport');
+    capture(size, 'album-from-bar');
+    run('press', 'Escape');
+    run('wait', '--fn', '!document.querySelector(".album-view")');
+    assert(`document.activeElement.classList.contains('bar-toggle')`, 'Escape must close the album and restore its opening bar control');
+    run('click', button('Menu'));
+    run('wait', '.now-playing');
+    assert(`document.querySelector('.now-playing .detail-cover') !== null && !document.querySelector('.album-view')`, 'The Menu key must open now playing with large artwork');
     capture(size, 'now-playing');
     run('click', '.now-playing .song:first-child .track-menu');
     assert(`!!document.querySelector('.now-playing [popover]:popover-open')`, 'Track actions must open on demand');
@@ -107,7 +114,7 @@ try {
     run('press', 'Escape');
     run('wait', '--fn', '!document.querySelector(".now-playing")');
     const returnedFocus = run('eval', 'document.activeElement.outerHTML').trim();
-    assert(`!document.querySelector('.now-playing') && document.activeElement.classList.contains('bar-toggle')`, `Escape must close now playing and restore its opening bar control; active=${returnedFocus}`);
+    assert(`!document.querySelector('.now-playing') && document.activeElement.getAttribute('aria-label')==='Menu'`, `Escape must close now playing and restore its opening Menu control; active=${returnedFocus}`);
 
     evaluate('document.activeElement?.blur()');
     run('press', 'ArrowRight');
@@ -361,8 +368,18 @@ try {
     run('click', '[role="option"]');
     run('click', '.tile[aria-label^="Open Quiet evenings"]');
     run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row").length===3');
+    run('click', '.album-view [aria-label="Shuffle"]');
+    assert(`document.querySelector('.album-view [aria-label="Shuffle"]').getAttribute('aria-pressed')==='true'`, 'The album Shuffle toggle must press');
+    run('click', button('Back to music'));
+    run('click', '.tile[aria-label^="Open Quiet evenings"]');
+    run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row").length===3');
+    assert(`document.querySelector('.album-view [aria-label="Shuffle"]').getAttribute('aria-pressed')==='true'`, 'Shuffle must be the player order, kept across closing and reopening the album');
+    run('click', '.album-view [aria-label="Shuffle"]');
+    assert(`document.querySelector('.album-view [aria-label="Shuffle"]').getAttribute('aria-pressed')==='false'`, 'The album Shuffle toggle must clear the player order');
+    assert(`document.querySelector('.album-view .track-row:nth-child(1) .track-artist')?.textContent.includes('David Bowie')`, 'Playlist rows must show the track artist');
     run('click', '.album-view .track-row:nth-child(1) .track');
     run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row.current").length===1 && document.querySelector(".album-view .track-row:nth-child(1).current") && !window.__auditAudio[0].paused');
+    evaluate(`document.querySelector('.album-view .track-row:nth-child(3)').scrollIntoView({ block: 'center' })`); // on phone the stacked cover puts row 3 under the bar
     run('click', '.album-view .track-row:nth-child(3) .track');
     run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row.current").length===1 && document.querySelector(".album-view .track-row:nth-child(3).current") && !window.__auditAudio[0].paused');
     assert(`!document.querySelector('.album-view .track-row:nth-child(1).current')`, 'Selecting the later duplicate must move playback and listening state to that occurrence');
@@ -370,6 +387,10 @@ try {
     run('wait', '--fn', 'window.__auditAudio[0].paused');
     assert(`document.querySelector('.album-view .track-row:nth-child(3).current .track').getAttribute('aria-label').startsWith('Play ')`, 'Selecting the current occurrence again must pause it');
     capture(size, 'playlist-duplicate-occurrence');
+    run('click', '.album-view .track-row:nth-child(2) .track-more');
+    run('click', '#track-actions-1 [role="menuitem"]');
+    run('wait', '--fn', 'document.querySelectorAll(".now-playing .song").length===4');
+    assert(`window.__auditAudio[0].paused`, 'Per-track Add to queue must append the song without starting playback');
     results.push({ size, status: 'passed' });
     console.log(`${size}: passed`);
   }

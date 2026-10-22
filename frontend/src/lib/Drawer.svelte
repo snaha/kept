@@ -27,7 +27,7 @@
     --s: clamp(0.85px, 100vw / 1600, 1.3px);
     /* covers the whole viewport underneath the bottom bar, so it sits on the dark panel with no seam */
     position: fixed; inset: 0; padding: 0 0 var(--botbar, 0px); box-sizing: border-box;
-    display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.85); color: #eee; z-index: 1;
+    display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.85); color: #eee; z-index: 8; /* above the album view (7), under the bar */
   }
   /* right variant: the bottom layout rotated — chevron on the right edge, centred, pointing right */
   .panel:not(.right) { top: var(--browsebar, 0px); }

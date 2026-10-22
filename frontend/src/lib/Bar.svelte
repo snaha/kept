@@ -4,7 +4,7 @@
   import { tick } from 'svelte';
   import { session } from './api.svelte';
   import { jumpRandom, next, prev, player, seek, setOrder, setVolume, toggle, type Order } from './player.svelte';
-  import { grid } from './library.svelte';
+  import { grid, library } from './library.svelte';
   import Queue from './Queue.svelte';
   import { artworkPalette, fallbackPalette } from './artwork-palette';
   let palette = $state(fallbackPalette);
@@ -52,6 +52,17 @@
   }
   // a menu item that opens a view hands the screen to it
   function revealPlayer() { player.queueOpen = !player.queueOpen; }
+  // the bar itself opens the album view of what is playing: the collection it was played from, or its album on the wall
+  const playingAlbum = $derived.by(() => {
+    const song = player.song; if (!song) return null;
+    const origin = song.playbackOrigin;
+    return library.tiles.find(tile => tile.id === (origin?.id ?? song.albumId)) ?? (origin ? { sub: song.artist ?? '', count: 0, available: true, ...origin } : null);
+  });
+  function showAlbum() {
+    if (library.details) { library.details = null; return; }
+    if (!playingAlbum) return;
+    player.queueOpen = false; player.view = ''; library.details = playingAlbum;
+  }
   $effect(() => { if (!player.queueOpen) menu = false; });
   function share() { player.viewFrom = 'bottom'; player.queueOpen = false; player.view = player.view === 'share' ? '' : 'share'; menu = false; }
   function visualize() { player.visOpen = true; menu = false; }
@@ -100,8 +111,8 @@
       {#if player.error}<button onclick={() => { player.viewFrom = 'right'; player.view = 'settings'; }}>Settings</button><button onclick={() => (player.error = '')} aria-label="Dismiss playback message">×</button>{/if}
     </div>
   {/if}
-  <div class="bar" class:hidden={hidden && !player.song && !player.queueOpen && !player.view && !menu && !player.pending && !player.error} class:lit={player.queueOpen || !!player.view || menu} bind:clientHeight={barHeight} role="group" aria-label="Playback bar">
-    <button class="bar-toggle" onclick={revealPlayer} aria-label={player.queueOpen ? 'Close now playing' : 'Show songs'} aria-keyshortcuts="q" aria-expanded={player.queueOpen} aria-controls="player-view"></button>
+  <div class="bar" class:hidden={hidden && !player.song && !player.queueOpen && !player.view && !menu && !player.pending && !player.error} class:lit={player.queueOpen || !!player.view || menu || !!library.details} bind:clientHeight={barHeight} role="group" aria-label="Playback bar">
+    <button class="bar-toggle" onclick={showAlbum} aria-label={library.details ? 'Close album' : 'Show album'} aria-expanded={!!library.details} aria-controls="album-view"></button>
     {#if player.song}
       <span class="left">
         {#if playingCover && playingCover !== failedCover}<img src={playingCover} alt="" onerror={() => (failedCover = playingCover)} />
@@ -123,7 +134,7 @@
       <button onclick={mute} disabled={!volumeSupported} aria-label={volume === 0 ? 'Unmute' : 'Mute'}><Icon name={volume === 0 ? 'mute' : 'volume'} /></button>
       <Slider type="single" min={0} max={100} step={1} value={volume} onValueChange={setVolume} disabled={!volumeSupported} aria-label="Local playback volume" />
     </div>
-    <button class="key" class:down={player.queueOpen} onclick={revealPlayer} aria-expanded={player.queueOpen} aria-controls="player-view" aria-label="Menu" title={player.queueOpen ? 'Close queue and recently played' : 'Open queue and recently played'}>
+    <button class="key" class:down={player.queueOpen} onclick={revealPlayer} aria-expanded={player.queueOpen} aria-controls="player-view" aria-keyshortcuts="q" aria-label="Menu" title={player.queueOpen ? 'Close queue and recently played' : 'Open queue and recently played'}>
       {#if player.queueOpen}<Icon name="close" />{:else}<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>{/if}
     </button>
     <div class="progress" role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={player.duration || 0} aria-valuenow={Math.min(player.time, player.duration || 0)} aria-valuetext={`${fmt(player.time)} of ${fmt(player.duration)}`}
