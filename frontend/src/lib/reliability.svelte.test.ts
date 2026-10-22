@@ -400,11 +400,22 @@ describe('review regressions', () => {
     await view.rerender({ tiles: many(4000) }); await tick();
     await view.rerender({ tiles: many(3000) }); await tick();
     expect(TestImage.started.length).toBe(6); // refreshed lists reuse the pool instead of starting six more loads each
+    const index = (src: string) => Number(/cover-(\d+)\.png/.exec(src)![1]);
+    const scroller = document.querySelector<HTMLElement>('.scroll')!;
+    const covered = () => [...document.querySelectorAll<HTMLImageElement>('.tile img')].map(image => index(image.src));
+    expect(covered()).toContain(0); // tiles near the viewport show their cover before any warmer load finishes
+    document.querySelector<HTMLImageElement>('.tile img')!.dispatchEvent(new Event('load'));
+    scroller.scrollTop = scroller.clientHeight + 200; scroller.dispatchEvent(new Event('scroll')); await tick();
+    expect(covered()).toContain(0); // a cover that loaded through its tile stays once the tile leaves the near band
+    const onScreen = [...document.querySelectorAll<HTMLElement>('.tile')].filter(tile => { const r = tile.getBoundingClientRect(); return r.bottom > 0 && r.top < scroller.clientHeight; }).map(tile => index(tile.querySelector('img')!.src));
+    expect(onScreen.length).toBeGreaterThan(0);
+    expect(onScreen).not.toContain(0);
     TestImage.started[0].onload!(); await tick();
     expect(TestImage.started.length).toBe(7);
     expect(new Set(TestImage.started.map(image => image.src)).size).toBe(7);
+    expect(onScreen).toContain(index(TestImage.started[6].src)); // the next warm is the nearest to the scroll position, not the next in library order
     await view.unmount(); await tick();
-    expect(TestImage.started.slice(1).every(image => image.src === '')).toBe(true); // unmount aborts the loads still in flight
+    expect(TestImage.started.slice(1).every(image => image.src === '')).toBe(true); // unmount releases the loads still in flight
   });
   it('lets the real Settings modal own focus above Queue and restores the queue control', async () => {
     play([track]);

@@ -129,7 +129,8 @@
   const centerRow = $derived((scrollTop - filterHeight + viewportHeight / 2) / rowStep);
   const near = (index: number) => index < 0 || Math.abs(Math.floor(index / effectiveCols) - centerRow) <= NEAR_VIEWPORTS * viewportHeight / rowStep;
   // One pool of WARM_PARALLEL loads outlives list changes: a new list only replaces the queue, a load already in flight
-  // finishes and counts for every list (a cover is the same cover), and no URL is loaded twice. Unmount aborts them
+  // finishes and counts for every list (a cover is the same cover), and no URL is loaded twice. Unmount releases them:
+  // clearing src drops the reference, Chromium still finishes the request
   const warmed = new SvelteSet<string>(), loading = new Map<string, HTMLImageElement>();
   let queue: { i: number; u: string }[] = [], workers = 0, disposed = false;
   const preload = (u: string) => new Promise<void>((r) => { const i = new Image(); loading.set(u, i); i.onload = i.onerror = () => { loading.delete(u); r(); }; i.src = u; });
@@ -260,7 +261,7 @@
       {@const playback = collectionPlayback(t)}
       <div class="tile-wrap" class:coverless={!t.cover} class:discovered={t.id === discoveryId} class:current={playback.current} class:listening={playback.listening}>
         <button class="tile" class:active={playback.listening} onclick={() => { details = t; player.queueOpen = false; player.view = ''; }} aria-label="Open {t.title} — {t.sub}" aria-current={playback.current ? 'true' : undefined}>
-          {#if t.cover && (warmed.has(t.cover) || near(index))}<img src={t.cover} alt="" draggable="false" />{/if}
+          {#if t.cover && (warmed.has(t.cover) || near(index))}<img src={t.cover} alt="" draggable="false" onload={() => warmed.add(t.cover)} />{/if}
         </button>
         <div class="tile-play"><CollectionPlayback collection={t} compact onplay={() => { if (!t.available) details = t; else pick(t); }} /></div>
         <div class="tile-info"><span class="tile-title">{t.title}<small>{t.sub}</small></span></div>
