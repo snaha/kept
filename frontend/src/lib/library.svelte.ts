@@ -52,17 +52,9 @@ export async function setMode(mode: Mode, refresh = false) {
     }
     if (mine === req && api === session.api) library.revision++;
   } catch (error) { if (mine === req) library.error = (error as Error).message; }
-  finally { if (mine === req) { library.loading = false; warmCovers(); } }
+  finally { if (mine === req) library.loading = false; }
 }
 
-const warmed = new Set<string>(); let warmGen = 0;
-const preload = (u: string) => new Promise<void>((r) => { const i = new Image(); i.onload = i.onerror = () => r(); i.src = u; });
-async function warmCovers() {
-  const gen = ++warmGen, todo = library.tiles.filter((t) => t.source === 'local').map((t) => t.cover).filter((u) => u && !warmed.has(u));
-  await Promise.all(Array.from({ length: 4 }, async () => {
-    while (todo.length && gen === warmGen) { const u = todo.shift()!; await preload(u); warmed.add(u); }
-  }));
-}
 // Navidrome extends the Subsonic scan status with completion and failure details.
 type LibraryScanStatus = ScanStatus & { lastScan?: string | Date; error?: string };
 export function watchScan() {
@@ -161,7 +153,7 @@ export function addCollection(t: Tile) {
   });
   return addTail;
 }
-export function disposeLibrary() { req++; pickRequest++; warmGen++; }
+export function disposeLibrary() { req++; pickRequest++; }
 
 export function grid(): Grid {
   const tiles = browseCollections(library.tiles).filter((t) => t.available), cum = new Float64Array(tiles.length + 1);
