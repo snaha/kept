@@ -297,6 +297,19 @@ try {
     run('set', 'viewport', String(width), String(height));
     run('wait', '400');
     assert(`${frontTitle}===window.__auditFront`, 'Resizing back with Loop on must keep the front album');
+    // Dig's Random pick becomes the front album, so a resize keeps it instead of going back to the album before the pick
+    run('click', button('Dig into your music'));
+    evaluate(`[...document.querySelectorAll('#dig-controls button')].find(b => b.textContent.trim() === 'Random pick').click()`);
+    run('wait', '400');
+    assert(`!!${frontDisc}.querySelector('.tile-wrap.discovered')`, 'Random pick in the jukebox must bring its album to the front');
+    evaluate(`window.__auditPick = ${frontTitle}`);
+    run('set', 'viewport', String(width - 20), String(height));
+    run('wait', '400');
+    assert(`${frontTitle}===window.__auditPick`, 'A resize after Random pick must keep the picked album at the front');
+    run('set', 'viewport', String(width), String(height));
+    run('wait', '400');
+    run('click', button('Dig into your music'));
+    run('click', button('3D'));
     evaluate(`document.querySelector('[aria-label="Reverse sort order"]').click()`); // the phone toolbar scrolls the button out of reach
     run('wait', '400');
     assert(`document.querySelector('.scroll').scrollTop > 1e6 && ${frontTitle}!==window.__auditFront`, 'A sort change with Loop on must start over from the middle of the page');

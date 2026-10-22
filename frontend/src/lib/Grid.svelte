@@ -110,7 +110,8 @@
     const tile = candidates[Math.floor(Math.random() * candidates.length)];
     discoveryId = tile.id;
     const index = shown.findIndex(t => t.id === tile.id);
-    if (tilt) seek((looping ? middle(period) : 0) + Math.floor(index / across) * pitch);
+    // the pick becomes the front album: its seek echoes as a scroll, so a resize or Loop toggle later must not go back
+    if (tilt) { front = Math.floor(index / across) * across; seek((looping ? middle(period) : 0) + front / across * pitch); }
     else scroller?.scrollTo({ top: Math.floor(index / effectiveCols) * rowStep, behavior: 'instant' });
   }
   let filterHeight = $state(110);
