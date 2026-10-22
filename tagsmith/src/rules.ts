@@ -84,9 +84,11 @@ export function planFolder(folder: Folder, config: RulesConfig = {}): FolderPlan
   let { album, disc } = albumOfFolder(dir, config.rename);
   const reasons: string[] = [];
 
-  // the files' own album tag wins when they agree on one; the folder name is for the rest
-  const tagged = mostCommon(files.map((f) => f.tags.album).filter(known));
-  if (tagged && tagged.count / n >= OWNER_SHARE) {
+  // the files' own album tag wins when they agree on one, or when every file that names an album names this one
+  // (the untagged bonus tracks join their siblings); the folder name is for the rest
+  const albums = files.map((f) => f.tags.album).filter(known);
+  const tagged = mostCommon(albums);
+  if (tagged && (tagged.count / n >= OWNER_SHARE || tagged.count === albums.length)) {
     // 'ANTHOLOGY 3 CD1' in the tags of a disc folder is the set's name plus the disc, which has its own field
     const t = disc !== null ? trailingDisc(tagged.name) : null;
     album = t ? t.album : tagged.name;
@@ -163,9 +165,13 @@ function filenameParts(f: Folder['files'][number], folder: Folder, owner: string
 export function planFiles(folder: Folder, config: RulesConfig = {}): Decision[] {
   const fp = planFolder(folder, config);
   const owner = fp.compilation ? '' : fp.albumartist;
+  // a file that names another album keeps it: the plan fills and tidies album names, it does not move files between albums
+  const planned = norm(fp.album);
+  const sameAlbum = (a: string) => [a, trailingDisc(a)?.album ?? '', config.rename?.[a] ?? ''].some((v) => norm(v) === planned);
   return folder.files.map((f) => {
     const before = f.tags;
-    const after: Tags = { ...before, album: fp.album, albumartist: fp.albumartist, compilation: fp.compilation ? '1' : '' };
+    const album = known(before.album) && !sameAlbum(before.album) ? before.album : fp.album;
+    const after: Tags = { ...before, album, albumartist: fp.albumartist, compilation: fp.compilation ? '1' : '' };
     if (fp.disc) after.disc = String(fp.disc);
     const parts = filenameParts(f, folder, owner, fp.album);
     let track = parts.track;

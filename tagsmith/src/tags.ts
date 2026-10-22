@@ -44,7 +44,20 @@ const MAPPED = new Set(['title', 'artist', 'album', 'albumartist', 'track', 'dis
 const isBinary = (v: unknown): boolean =>
   v instanceof Uint8Array || (typeof v === 'object' && v !== null && Object.values(v as object).some((x) => x instanceof Uint8Array));
 
+/** RIFF INFO carries no encoding, so music-metadata reads a WAV's INFO text as Latin-1 and UTF-8 arrives as
+ *  mojibake ('CafÃ©' for 'Café'). Re-decoded when the text has UTF-8's lead-and-continuation shape and survives
+ *  the decode; real Latin-1 text with accents does not have that shape. */
+const MOJIBAKE = /[\u00c2-\u00f4][\u0080-\u00bf]/;
+function redecode(s: string): string {
+  if (!MOJIBAKE.test(s)) return s;
+  const utf8 = Buffer.from(s, 'latin1').toString('utf8');
+  return utf8.includes('\ufffd') ? s : utf8;
+}
+
 export function fromMetadata(path: string, { common, format, native }: IAudioMetadata): FileInfo {
+  const formats = Object.keys(native ?? {});
+  const infoOnly = formats.length > 0 && formats.every((f) => f === 'exif');
+  const text = (v: string | undefined): string => (infoOnly ? redecode(v ?? '') : v ?? '');
   const extra: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(common)) if (!MAPPED.has(k) && v !== undefined && !isBinary(v)) extra[k] = v;
   const raw: FileInfo['raw'] = {};
@@ -55,14 +68,14 @@ export function fromMetadata(path: string, { common, format, native }: IAudioMet
   return {
     path,
     tags: {
-      title: common.title ?? '',
-      artist: common.artist ?? '',
-      album: common.album ?? '',
-      albumartist: common.albumartist ?? '',
+      title: text(common.title),
+      artist: text(common.artist),
+      album: text(common.album),
+      albumartist: text(common.albumartist),
       track: common.track.no ? String(common.track.no) : '',
       disc: common.disk.no ? String(common.disk.no) : '',
       year: common.year ? String(common.year) : '',
-      genre: common.genre?.[0] ?? '',
+      genre: text(common.genre?.[0]),
       compilation: common.compilation ? '1' : '',
       mb_recordingid: common.musicbrainz_recordingid ?? '',
       mb_albumid: common.musicbrainz_albumid ?? '',

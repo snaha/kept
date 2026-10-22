@@ -1,6 +1,6 @@
 /** Stage 1: walk folders, read tags, classify each folder, and list what is wrong without touching the network. */
 import { readdir, open } from 'node:fs/promises';
-import { join, basename, dirname } from 'node:path';
+import { join, basename, dirname, resolve } from 'node:path';
 import { AUDIO, IMAGE, discOf, ext, known, nfc, norm } from './text.ts';
 import { emptyTags, readTags, type FileInfo, type TagReader } from './tags.ts';
 
@@ -40,7 +40,13 @@ export type Folder = {
   findings: string[];
 };
 
-export type Inventory = { roots: string[]; scanned: string; folders: Folder[] };
+export type Inventory = {
+  roots: string[];
+  scanned: string;
+  folders: Folder[];
+  /** directories that could not be listed (permissions, a drive's own folders); the run goes on without them */
+  unreadable: string[];
+};
 
 export type InventoryOptions = {
   read?: TagReader;
@@ -61,22 +67,35 @@ async function imageKind(path: string): Promise<string | null> {
   }
 }
 
-/** Every folder under the roots that holds audio, with its audio and image file names. */
-async function walk(roots: string[]): Promise<{ dir: string; audio: string[]; images: string[] }[]> {
-  const out: { dir: string; audio: string[]; images: string[] }[] = [];
+/** Every folder under the roots that holds audio, with its audio and image file names. Dot entries are skipped:
+ *  `._*` AppleDouble copies are not audio and `.Trashes` is not a library. A folder that cannot be listed is
+ *  reported, not fatal. Overlapping roots visit a folder once. */
+async function walk(roots: string[]): Promise<{ folders: { dir: string; audio: string[]; images: string[] }[]; unreadable: string[] }> {
+  const folders: { dir: string; audio: string[]; images: string[] }[] = [];
+  const unreadable: string[] = [];
+  const seen = new Set<string>();
   const visit = async (dir: string) => {
-    const entries = await readdir(dir, { withFileTypes: true });
+    if (seen.has(dir)) return;
+    seen.add(dir);
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      unreadable.push(dir);
+      return;
+    }
     const audio: string[] = [];
     const images: string[] = [];
     for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
       if (e.isDirectory()) await visit(join(dir, e.name));
       else if (AUDIO.has(ext(e.name))) audio.push(e.name);
       else if (IMAGE.has(ext(e.name))) images.push(e.name);
     }
-    if (audio.length) out.push({ dir, audio: audio.sort(), images: images.sort() });
+    if (audio.length) folders.push({ dir, audio: audio.sort(), images: images.sort() });
   };
-  for (const r of roots) await visit(r);
-  return out.sort((a, b) => a.dir.localeCompare(b.dir));
+  for (const r of roots) await visit(resolve(r));
+  return { folders: folders.sort((a, b) => a.dir.localeCompare(b.dir)), unreadable };
 }
 
 const top = (counts: Map<string, number>): number => Math.max(0, ...counts.values());
@@ -110,7 +129,7 @@ export function classify(dir: string, files: FileInfo[], dump = DUMP): { class: 
   else if (n <= 2) cls = 'singles';
   else if (discOf(basename(dir)) !== null) cls = 'disc';
   else if (stats.noArtist / n > 0.5 && (albums.size === 0 || stats.untitled / n > 0.5)) cls = 'untagged';
-  else if (albums.size >= 3 && [...albums.values()].filter((c) => c >= 2).length >= 2) cls = 'multi';
+  else if ([...albums.values()].filter((c) => c >= 2).length >= 2) cls = 'multi';
   else if (stats.topArtistShare < 0.6 && !(albumArtist && known(albumArtist) && artists.size <= 1)) cls = 'compilation';
   else cls = 'album';
   return { class: cls, stats };
@@ -122,7 +141,13 @@ export async function findings(dir: string, cls: FolderClass, files: FileInfo[],
   const broken = files.filter((f) => f.pictures.some((s) => s === 0));
   if (broken.length) out.push(`${broken.length} files carry a zero-byte picture frame`);
   for (const img of images) {
-    const kind = await imageKind(join(dir, img));
+    let kind: string | null;
+    try {
+      kind = await imageKind(join(dir, img));
+    } catch {
+      out.push(`${img} could not be read`); // a dangling symlink or a file without read permission
+      continue;
+    }
     if (!kind) out.push(`${img} is not an image`);
     else if (kind === 'bmp') out.push(`${img} is BMP, which servers ignore as a cover`);
     else if (cls === 'multi' && /^(cover|folder|front)\./i.test(img)) out.push(`${img} would show on every album in this folder`);
@@ -135,7 +160,7 @@ export async function findings(dir: string, cls: FolderClass, files: FileInfo[],
 export async function inventory(roots: string[], opts: InventoryOptions = {}): Promise<Inventory> {
   const read = opts.read ?? readTags;
   const folders: Folder[] = [];
-  const tree = await walk(roots);
+  const { folders: tree, unreadable: unlisted } = await walk(roots);
   for (const [i, { dir, audio, images }] of tree.entries()) {
     const files: FileInfo[] = [];
     const unreadable: string[] = [];
@@ -154,7 +179,7 @@ export async function inventory(roots: string[], opts: InventoryOptions = {}): P
     folders.push({ dir, class: cls, files, images, stats, identified: stats.identified / files.length >= 0.6, findings: notes });
     opts.onProgress?.(i + 1, dir);
   }
-  return { roots, scanned: new Date().toISOString(), folders };
+  return { roots, scanned: new Date().toISOString(), folders, unreadable: unlisted };
 }
 
 /** The name a disc folder's set is known by: its parent folder. */

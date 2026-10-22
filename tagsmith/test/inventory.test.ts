@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, symlink, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -34,15 +34,19 @@ beforeAll(async () => {
     await mkdir(join(root, dir), { recursive: true });
     for (const [name, data] of Object.entries(files)) await writeFile(join(root, dir, name), data);
   };
-  await mk('Black Eyed Peas/Elephunk', { '01 - Hands Up.mp3': '', '02 - Labor Day.mp3': '', '03 - Anxiety.mp3': '', 'cover.bmp': Buffer.from('424d0000', 'hex') });
+  await mk('Black Eyed Peas/Elephunk', { '01 - Hands Up.mp3': '', '02 - Labor Day.mp3': '', '03 - Anxiety.mp3': '', '._01 - Hands Up.mp3': 'AppleDouble', 'cover.bmp': Buffer.from('424d0000', 'hex') });
+  await mk('.Trashes', { 'gone.mp3': '' });
+  await mk('Locked', { 'secret.mp3': '' });
+  await chmod(join(root, 'Locked'), 0);
   await mk('Guitar Riffs', { 'beatles1.mp3': '', 'beatles2.mp3': '', 'acdc1.mp3': '', 'acdc2.mp3': '', 'riff1.mp3': '', 'riff2.mp3': '', 'Folder.jpg': Buffer.from('ffd8ffe0', 'hex'), 'front.jpg': 'not an image' });
   await mk('Fluke - Risotto', { '01 - Absurd.mp3': '', '02 - Atom Bomb.mp3': '', '03 - Kitten Moon.mp3': '' });
+  await symlink(join(root, 'nowhere.jpg'), join(root, 'Fluke - Risotto', 'cover.jpg'));
   await mk('Loose', { 'Chi mai.mp3': '' });
   await mk('Empty', { 'readme.txt': '' });
   inv = await inventory([root], { read });
 });
 
-afterAll(() => rm(root, { recursive: true, force: true }));
+afterAll(async () => { await chmod(join(root, 'Locked'), 0o700); await rm(root, { recursive: true, force: true }); });
 
 const byName = (name: string) => inv.folders.find((f) => basename(f.dir) === name)!;
 
@@ -68,6 +72,17 @@ describe('inventory', () => {
   it('reports findings without the network', () => {
     expect(byName('Elephunk').findings).toEqual(['1 files carry a zero-byte picture frame', 'cover.bmp is BMP, which servers ignore as a cover']);
     expect(byName('Guitar Riffs').findings).toEqual(['Folder.jpg would show on every album in this folder', 'front.jpg is not an image']);
-    expect(byName('Fluke - Risotto').findings).toEqual([]);
+    expect(byName('Fluke - Risotto').findings).toEqual(['cover.jpg could not be read']);
+  });
+
+  it('skips dot entries and reports folders it cannot list instead of giving up', () => {
+    expect(inv.folders.map((f) => basename(f.dir))).not.toContain('.Trashes');
+    expect(byName('Elephunk').files.map((f) => basename(f.path))).not.toContain('._01 - Hands Up.mp3');
+    expect(inv.unreadable).toEqual(process.getuid?.() === 0 ? [] : [join(root, 'Locked')]);
+  });
+
+  it('indexes a folder once when roots overlap', async () => {
+    const twice = await inventory([root, join(root, 'Guitar Riffs')], { read });
+    expect(twice.folders.map((f) => basename(f.dir))).toEqual(inv.folders.map((f) => basename(f.dir)));
   });
 });

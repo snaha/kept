@@ -28,6 +28,13 @@ describe('planFolder', () => {
     expect(planFolder(f)).toMatchObject({ album: '正しいアルバム', albumartist: '日本語の歌手', compilation: false });
   });
 
+  it('uses the album every tagged file agrees on, so untagged bonus tracks join it', () => {
+    const dir = '/m/Pink Floyd - The Wall (1979)';
+    const f = folder(dir, Array.from({ length: 10 }, (_, i) => file(dir, `${String(i + 1).padStart(2, '0')} - Song.mp3`, { artist: 'Pink Floyd', album: i < 5 ? 'The Wall' : '' })));
+    expect(f.class).toBe('album');
+    expect(planFolder(f)).toMatchObject({ album: 'The Wall', albumartist: 'Pink Floyd', compilation: false });
+  });
+
   it('makes a mixed folder a Various Artists compilation named after the folder', () => {
     const dir = '/m/Old Skool Funk';
     const f = folder(dir, [
@@ -146,6 +153,23 @@ describe('planFiles', () => {
   });
 });
 
+describe('planFiles with two albums', () => {
+  const dir = '/m/Pink Floyd';
+  const f = folder(dir, [
+    ...Array.from({ length: 13 }, (_, i) => file(dir, `wall${i}.mp3`, { artist: 'Pink Floyd', album: 'The Wall', title: `Wall ${i}` })),
+    ...Array.from({ length: 7 }, (_, i) => file(dir, `animals${i}.mp3`, { artist: 'Pink Floyd', album: 'Animals', title: `Animals ${i}` })),
+  ]);
+  it('classifies two albums with two or more files each as multi, so plan skips the folder', () => {
+    expect(f.class).toBe('multi');
+    expect(plan({ roots: ['/m'], scanned: '', folders: [f], unreadable: [] }).decisions).toEqual([]);
+  });
+  it('never moves a file that names another album, even when the folder is planned', () => {
+    const d = planFiles(f);
+    expect(d.slice(13).every((x) => (x.after?.album ?? x.before.album) === 'Animals')).toBe(true);
+    expect(d.slice(0, 13).every((x) => (x.after?.album ?? x.before.album) === 'The Wall')).toBe(true);
+  });
+});
+
 describe('plan', () => {
   it('never rewrites a mixed folder whole, whichever side of the dump threshold it is on', () => {
     const dir = '/m/Mixed library';
@@ -153,7 +177,7 @@ describe('plan', () => {
     for (const n of [30, 90]) {
       const f = folder(dir, mixed(n));
       expect(f.class).toBe(n > 60 ? 'dump' : 'multi');
-      const { decisions, skipped } = plan({ roots: ['/m'], scanned: '', folders: [f] });
+      const { decisions, skipped } = plan({ roots: ['/m'], scanned: '', folders: [f], unreadable: [] });
       expect(decisions).toEqual([]);
       expect(skipped).toEqual([{ dir, why: expect.stringContaining('split it first') }]);
     }

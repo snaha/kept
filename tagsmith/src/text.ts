@@ -1,13 +1,17 @@
 /** Text helpers shared by every stage: accent folding, folder-name cleaning, filename parsing. Pure functions. */
 
-/** NFKD with the Latin combining diacritics dropped: 'Öröm' -> 'Orom', so names compare the way people type them.
- * Only that block goes: the voiced marks of kana are letters' worth of meaning, not accents. */
-export const fold = (s: string): string => s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+/** NFKD with the combining diacritics dropped from Latin letters only: 'Öröm' -> 'Orom', so names compare the way
+ * people type them. Marks on other scripts stay: the breve in 'й' and the voiced marks of kana are letters' worth
+ * of meaning, not accents. */
+export const fold = (s: string): string => s.normalize('NFKD').replace(/(\p{Script=Latin})[\u0300-\u036f]+/gu, '$1');
 
 /** Comparison key: folded, lower case, runs of punctuation and space collapsed to one space. Letters and digits of
- * every script count, so a Japanese or Cyrillic name keeps its key instead of folding to nothing. */
-export const norm = (s: string | null | undefined): string =>
-  fold(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, ' ').trim().normalize('NFC');
+ * every script count, so a Japanese or Cyrillic name keeps its key instead of folding to nothing. A name made of
+ * punctuation alone ('!!!', '+/-') keeps its trimmed lower-cased spelling as the key, so it is a name, not a blank. */
+export function norm(s: string | null | undefined): string {
+  const key = fold(s ?? '').toLowerCase().replace(/[^\p{L}\p{N}\p{M}]+/gu, ' ').trim().normalize('NFC');
+  return key || (s ?? '').trim().toLowerCase();
+}
 
 /** Folder names on disk may be NFD (macOS); tags and lookups are NFC. */
 export const nfc = (s: string): string => s.normalize('NFC');

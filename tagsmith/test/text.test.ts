@@ -11,6 +11,16 @@ describe('norm', () => {
     expect(norm('正しいアルバム')).toBe('正しいアルバム');
     expect(norm('Кино — Группа крови (1988)')).toBe('кино группа крови 1988');
   });
+  it('keeps marks that belong to non-Latin letters', () => {
+    expect(norm('Йорк')).toBe('йорк');
+    expect(norm('ガ')).toBe('ガ');
+  });
+  it('gives a name made of punctuation a key of its own', () => {
+    expect(norm('!!!')).toBe('!!!');
+    expect(norm('+/-')).toBe('+/-');
+    expect(norm(' †††')).toBe('†††');
+    expect(norm('!!!')).not.toBe(norm('+/-'));
+  });
 });
 
 describe('cleanName', () => {
