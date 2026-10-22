@@ -269,7 +269,9 @@ try {
     assert(`${glossButton}.getAttribute('aria-pressed')==='true' && ${glossed}`, 'Gloss must sheen every flat tile when on');
     run('click', button('3D'));
     run('click', '[aria-label="3D view"] button:nth-child(2)');
-    assert(`!document.querySelector('.tile .gloss') && !${glossButton}`, 'Gloss must leave the 3D views and hide its toggle');
+    run('click', button('Layout'));
+    assert(`!!document.querySelector('.controls > button[aria-pressed]') && !document.querySelector('.tile .gloss') && !${glossButton}`, 'Gloss must leave the 3D views and hide its toggle from the open Layout controls');
+    run('click', button('3D'));
     run('click', '[aria-label="3D view"] button:nth-child(1)');
     run('click', button('Layout'));
     assert(`${glossButton}.getAttribute('aria-pressed')==='true' && ${glossed}`, 'Gloss must return with the flat grid');
