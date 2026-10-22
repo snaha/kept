@@ -23,6 +23,13 @@ const meta = {
 
 describe('fromMetadata', () => {
   const f = fromMetadata('/m/a.mp3', meta);
+  it('re-decodes UTF-8 that a RIFF INFO chunk delivered as Latin-1, and only there', () => {
+    const mojibake = Buffer.from('Café del Mar – 正しい', 'utf8').toString('latin1');
+    const info = { ...meta, common: { ...meta.common, album: mojibake, albumartist: 'Ångström' }, native: { exif: [{ id: 'IPRD', value: mojibake }] } } as unknown as IAudioMetadata;
+    expect(fromMetadata('/m/a.wav', info).tags).toMatchObject({ album: 'Café del Mar – 正しい', albumartist: 'Ångström' });
+    const id3 = { ...meta, common: { ...meta.common, album: mojibake } } as unknown as IAudioMetadata;
+    expect(fromMetadata('/m/a.mp3', id3).tags.album).toBe(mojibake);
+  });
   it('maps the planned fields and the MusicBrainz ids', () => {
     expect(f.tags).toMatchObject({ title: 'Hands Up', track: '1', disc: '', year: '2003', genre: 'Hip Hop', compilation: '', mb_albumid: 'a1', mb_recordingid: 'r1', mb_releasegroupid: 'g1' });
     expect(f.duration).toBe(231);

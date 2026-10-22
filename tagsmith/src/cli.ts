@@ -41,6 +41,7 @@ const commands: Record<string, () => Promise<void>> = {
     console.log(`${inv.folders.length} folders, ${files} files in ${Math.round((Date.now() - t0) / 1000)}s -> ${inventoryFile}`);
     console.log(Object.entries(byClass).map(([c, n]) => `${c} ${n}`).join(', '));
     console.log(`${inv.folders.filter((f) => f.identified).length} folders already carry MusicBrainz release ids`);
+    if (inv.unreadable.length) console.log(`\n${inv.unreadable.length} folders could not be listed:\n  ${inv.unreadable.join('\n  ')}`);
     const flagged = inv.folders.filter((f) => f.findings.length);
     if (flagged.length) {
       console.log(`\n${flagged.length} folders with findings:`);

@@ -22,7 +22,9 @@ whose files mostly carry a MusicBrainz release id is marked `identified`. Classe
 albums in one flat folder), `compilation` (no artist holds 60% of the files), `dump` (more than 60 files),
 `singles` (one or two files), `untagged` (most files carry no album and no artist). Findings need no network:
 a cover that would show on every album of a flat folder, zero-byte picture frames, image files that are not
-images, BMP covers servers ignore, decomposed Unicode folder names, placeholder album tags, unreadable files.
+images, BMP covers servers ignore, decomposed Unicode folder names, placeholder album tags, unreadable files
+and images. Dot entries (`._*` AppleDouble copies, `.Trashes`) are skipped, a folder that cannot be listed is
+reported and the run goes on, and overlapping roots index a folder once.
 
 ## Plan
 
@@ -37,7 +39,8 @@ The no-network rules, per folder:
 - Empty titles and artists are filled from `NN Artist - Title` or `NN Title - Artist` filenames; the word
   order is learned from the folder's tagged files. A title that is the file name with its extension counts as
   empty. A trailing year in parentheses is dropped.
-- Flat multi-album folders and one-off singles are skipped and listed with `-v`.
+- Flat multi-album folders, dumps past the album size and one-off singles are skipped and listed with `-v`.
+- A file that names another album keeps it; the rules fill and tidy album names, they never move a file between albums.
 
 `work/decisions.jsonl` holds one line per file: `before`, `after`, the changed fields and the reason. Files
 already decided are skipped on the next run; delete the line to redo one.
