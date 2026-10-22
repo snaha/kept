@@ -1,3 +1,4 @@
+import { randomId } from './random-id';
 import { HISTORY_SCHEMA_VERSION, isListeningContext } from '../../../shared/contracts';
 import { readJsonPreference, writePreference } from './preferences';
 import { coverUrl, session } from './api.svelte';
@@ -135,7 +136,7 @@ export async function searchHistory(query = listeningHistory.query, more = false
 }
 export function recordHistory(context: ListeningContext, index: number, cursor: number) {
   loadHistory();
-  const entry = { id: crypto.randomUUID(), context, index, cursor, playedAt: Date.now() };
+  const entry = { id: randomId(), context, index, cursor, playedAt: Date.now() };
   // Only unfiltered history can optimistically include a new listening event.
   if (!window.musicHistory || !listeningHistory.query.trim()) {
     listeningHistory.entries.unshift(entry);

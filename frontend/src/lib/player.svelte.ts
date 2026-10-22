@@ -1,3 +1,4 @@
+import { randomId } from './random-id';
 import { logPlayback } from './playback-log';
 import { readPreference, writePreference } from './preferences';
 import { session, streamUrl } from './api.svelte';
@@ -18,13 +19,16 @@ export const player = $state({
   get song() { return this.queue[this.index] as Track | undefined; },
 });
 
+// a phone in Control mode drives the player of the computer that shared the link: while `remote.send` is set, the
+// entry points below hand their request over instead of playing here, and the computer's state comes back into `player`
+export const remote: { send?: (command: object) => void } = {};
 let audio: HTMLAudioElement, warmAudio: HTMLAudioElement;
 let playbackListeners: AbortController | undefined;
 const savedVolume = Number(readPreference('music.volume', '100'));
 player.volume = Number.isFinite(savedVolume) ? Math.max(0, Math.min(100, savedVolume)) : 100;
 export function beginCollectionOperation(kind: 'play' | 'add', collectionId: string) {
   if (kind === 'play') cancelPlayOperations();
-  const id = crypto.randomUUID();
+  const id = randomId();
   player.collectionOperations.push({ id, kind, collectionId });
   return {
     id,
@@ -33,7 +37,7 @@ export function beginCollectionOperation(kind: 'play' | 'add', collectionId: str
   };
 }
 function cancelPlayOperations(except?: string) { player.collectionOperations = player.collectionOperations.filter(op => op.kind !== 'play' || op.id === except); }
-const queueEntry = (track: Track): Track => ({ ...track, queueEntryId: crypto.randomUUID() });
+const queueEntry = (track: Track): Track => ({ ...track, queueEntryId: randomId() });
 let localTrack: Track | undefined, scrobbled = false;
 let intent = 0, perm: Uint32Array = new Uint32Array(0), cursor = -1;
 let randomGrid: Grid | undefined, randomDraw = 0;
@@ -43,7 +47,7 @@ let historyContext: ListeningContext | undefined;
 function freshHistoryContext() { historyContext = undefined; }
 function remember(index: number) {
   if (!historyContext) {
-    const context = $state<ListeningContext>({ id: crypto.randomUUID(), queue: player.queue.map(t => ({ ...t })), origin: player.queue[index]?.playbackOrigin, order: player.order, permutation: [...perm] });
+    const context = $state<ListeningContext>({ id: randomId(), queue: player.queue.map(t => ({ ...t })), origin: player.queue[index]?.playbackOrigin, order: player.order, permutation: [...perm] });
     historyContext = context;
   }
   recordHistory(historyContext, index, cursor);
@@ -73,6 +77,7 @@ function metadata(track: Track) {
 export function setVolume(value: number) {
   if (!Number.isFinite(value)) return;
   player.volume = Math.max(0, Math.min(100, Math.round(value)));
+  if (remote.send) return remote.send({ type: 'command', name: 'volume', value: player.volume });
   if (audio) audio.volume = player.volume / 100;
   writePreference('music.volume', String(player.volume));
 }
@@ -122,6 +127,7 @@ function rebuildShuffle() {
   if (player.order === 'shuffle') { perm = shuffle(player.queue.length, player.index); cursor = 0; }
 }
 export function play(queue: Track[], index = 0, operationId?: string) {
+  if (remote.send) { remote.send({ type: 'command', name: 'tracks', tracks: queue, index }); return queueVersion; }
   if (blocked(queue[Math.max(0, index)])) return -1;
   player.requestRevision++; cancelPlayOperations(operationId);
   if (!operationId) player.loadingCollectionId = '';
@@ -145,6 +151,7 @@ export function appendToSession(tracks: Track[], version: number) {
 }
 export const queueSession = () => queueVersion;
 export function enqueue(tracks: Track[]) {
+  if (remote.send) { remote.send({ type: 'command', name: 'queue', tracks }); return queueVersion; }
   if (player.order === 'random') { randomGrid = undefined; cancelRandomLookup(); player.order = 'normal'; }
   appendToSession(tracks, queueVersion); player.queueOpen = true;
   return queueVersion;
@@ -250,6 +257,7 @@ export function jump(index: number) {
   void start(index);
 }
 export function next() {
+  if (remote.send) return remote.send({ type: 'command', name: 'next' });
   player.requestRevision++; cancelPlayOperations(); player.loadingCollectionId = '';
   if (player.order === 'random') return void nextRandom();
   const index = player.order === 'shuffle' ? perm[cursor + 1] : (player.blockedIndex >= 0 ? player.blockedIndex : player.index) + 1;
@@ -257,6 +265,7 @@ export function next() {
   else { void pause(); player.time = player.duration; }
 }
 export function prev() {
+  if (remote.send) return remote.send({ type: 'command', name: 'prev' });
   player.requestRevision++; cancelPlayOperations(); player.loadingCollectionId = '';
   cancelRandomLookup();
   if (player.time > 3) return seek(0);
@@ -272,6 +281,7 @@ export async function pause() {
   catch (error) { if (mine === intent) fail(error); }
 }
 export async function toggle() {
+  if (remote.send) return remote.send({ type: 'command', name: 'toggle' });
   if (player.loadingCollectionId && !player.pending && !player.song) { cancelCollectionLoading(); return; }
   if (player.blockedIndex >= 0) return start(player.blockedIndex);
   if (player.playing || player.pending) return pause();
@@ -284,6 +294,7 @@ export async function toggle() {
 }
 export function cancelCollectionLoading() { player.requestRevision++; cancelPlayOperations(); player.loadingCollectionId = ''; }
 export async function seek(fraction: number) {
+  if (remote.send) return; // ponytail: no seeking from a phone yet
   if (!player.duration || player.pending || !Number.isFinite(fraction)) return;
   const seconds = Math.max(0, Math.min(1, fraction)) * player.duration;
   player.time = seconds;
