@@ -3,6 +3,7 @@
   import { fly } from 'svelte/transition';
   import { prefersReducedMotion } from 'svelte/motion';
   import { keyboardScope } from './keyboard';
+  import { session } from './api.svelte';
   import { library, trackPages, pick, addCollection, grid, type Tile } from './library.svelte';
   import { collectionTrackIsCurrent, play, player, toggle, enqueue, setOrder } from './player.svelte';
   import { artworkPalette, fallbackPalette } from './artwork-palette';
@@ -119,6 +120,8 @@
           {#if actions}<div class="action-menu" id="album-actions" role="menu" aria-label="Album actions" use:keyboardScope={actionKeys}>
             <button role="menuitem" disabled={!tracks.some(track => track.available)} onclick={() => { void addCollection(tile); actions = false; }}>Add to queue</button>
             <button role="menuitem" onclick={() => { preferences = !preferences; actions = false; }}>Album preferences &amp; Dig tags</button>
+            {#if session.admin}<button role="menuitem" onclick={() => { player.viewFrom = 'bottom'; player.view = 'share'; actions = false; }}>Share</button>{/if}
+            <button role="menuitem" onclick={() => { player.visOpen = true; actions = false; }}>Visualizer</button>
           </div>{/if}
         </div>
       </div>

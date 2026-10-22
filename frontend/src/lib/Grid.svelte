@@ -72,7 +72,7 @@
   function sortChanged() { if (sort === 'random') randomSeed = Math.random(); applySort(); }
   let favoritesOnly = $state(false);
   // the album view stays under the visualizer, as the expanded player does
-  $effect(() => { if (player.queueOpen || player.view === 'share') library.details = null; });
+  $effect(() => { if (player.queueOpen) library.details = null; }); // share and the visualizer open over the album, it stays underneath
   const covered = $derived(!!library.details || player.queueOpen);
   const currentDetails = $derived.by(() => { const selected = library.details; return selected ? library.tiles.find(tile => tile.id === selected.id) || selected : null; });
   const filtersOpen = $derived(toolbar.mode === 'filters');
