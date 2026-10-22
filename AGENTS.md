@@ -15,9 +15,9 @@ This project uses **pnpm** (not npm or yarn). Always use `pnpm` commands:
 - **No semicolons**
 - **Never use `null`** — use `undefined` (exception: external library APIs)
 - **Never use `any`** — use proper types, generics, `unknown`
-- **Never use dynamic imports** — static imports at top of file only
+- **Use static imports.** Use `import()` only for deliberate lazy loading (the visualizer engine) and test harnesses
 - **No magic numbers** — use SCREAMING_SNAKE_CASE constants (0, 1, -1, 2 excepted)
-- **Omit file extensions** in imports the frontend bundler resolves (`frontend/src`). Desktop source, workers and scripts run as Node ESM, where relative imports keep their `.js` extension
+- **File extensions in imports:** in `frontend/src`, omit `.ts`/`.js` on relative imports; keep `.svelte` and `.css`. Value imports in modules that Node runs directly (`frontend/tests`, self-checks) keep `.ts`. Desktop, `shared/`, workers and scripts keep `.js`
 - **kebab-case** for all file and directory names
 
 ## Commits
@@ -27,6 +27,7 @@ This project uses **pnpm** (not npm or yarn). Always use `pnpm` commands:
 - Subject only. Add a body just when the _why_ isn't obvious from the diff, and keep
   it to a few wrapped lines.
 - No `Co-Authored-By`, no `Generated with Claude Code`, no session links, no emoji.
+- PRs are squash-merged, so the PR title becomes the commit subject: write it as a commit subject.
 - Keep PR titles and descriptions concise.
 - Omit automated-testing details from PR descriptions — TDD process, test counts, or "checks pass" statements. CI runs the full suite on every PR, so these add nothing. Manual or visual checks CI cannot do (e.g. "verified in the browser against the Figma frames") are worth a sentence.
 - Omit the issue number from branch names and titles
