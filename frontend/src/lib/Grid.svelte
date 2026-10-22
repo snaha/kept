@@ -133,7 +133,7 @@
   }));
   const shown = $derived(view.collections);
   onMount(() => registerBrowseSource(() => searching ? catalogSearch.collections : view.collections));
-  function filterChanged() { scrollTop = 0; details = null; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0, left: 0 }); front = 0; if (looping) seek(middle(period)); }
+  function filterChanged() { scrollTop = 0; details = null; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0, left: 0 }); front = 0; want = ''; if (looping) seek(middle(period)); }
   function changeMode(mode: Mode) { artistFilter = ''; favoritesOnly = false; filterChanged(); void setMode(mode); }
   function changeSource() { artistFilter = ''; filterChanged(); }
   function resetFilters() { query = ''; artistFilter = ''; library.source = 'all'; sort = DEFAULT_SORT; sortDirection = 1; showFilter = 'all'; favoritesOnly = false; coversOnly = false; resetDig(); filterChanged(); }
@@ -299,6 +299,52 @@
   });
   // the plane's shift along itself: scroll plus the mouse drift
   const shiftX = $derived(drift.current.x * -8), shiftY = $derived(-offset + drift.current.y * -6);
+  // L, or ctrl/cmd-L as in iTunes, scrolls to the playing album. If it is not in the list (another mode, a search, a
+  // filter) it first goes to all albums, and the jump follows once they are in
+  // the album a jump waits for while the album list comes in. The jump is off if another album takes over, if the
+  // list settles without the album, or if the user moves on meanwhile (a filter, an album, a scroll), so it never
+  // fires later on an unrelated change
+  let want = $state('');
+  function reveal() {
+    if (!activeId) return;
+    // a search replaces the wall with results, so the album is hidden even when the query matches it
+    if (searching || !shown.some(t => t.id === activeId)) {
+      query = ''; artistFilter = ''; showFilter = 'all'; favoritesOnly = false; coversOnly = false; library.source = 'all'; resetDig();
+      if (library.mode !== 'albums') changeMode('albums'); else filterChanged();
+      want = activeId;
+      return;
+    }
+    // whatever covers the wall goes first, so the album is actually seen
+    details = null; player.queueOpen = false; player.view = '';
+    const i = shown.findIndex(t => t.id === activeId);
+    requestAnimationFrame(() => {
+      if (!tilt) return scroller.scrollTo({ top: filterHeight + pixelGap + Math.floor(i / effectiveCols) * rowStep + rowStep / 2 - viewportHeight / 2, behavior: 'smooth' });
+      // on the tilted plane the scroll is the distance along it: bring the cover to the middle of the plane, the nearest
+      // way round when it loops. In a single row it comes to the front, or the middle, of the row
+      const round = (d: number, p: number) => (p ? mod(d + p / 2, p) - p / 2 : d);
+      const to = single ? i * pitch : pixelGap + Math.floor(i / across) * pitch + tile / 2 - viewportHeight / 2;
+      scroller.scrollBy({ [flow ? 'left' : 'top']: round(to - offset, looping ? period : 0), behavior: 'smooth' });
+    });
+  }
+  $effect(() => {
+    if (!want) return;
+    if (want !== activeId || details) { want = ''; return; }
+    if (shown.some(t => t.id === want)) { want = ''; untrack(reveal); }
+    else if (!library.loading) want = '';
+  });
+  function onkeydown(e: KeyboardEvent) {
+    if (e.defaultPrevented || e.isComposing || player.visOpen) return;
+    const target = e.target as HTMLElement, combo = e.ctrlKey || e.metaKey; // the combination also works from the search field
+    const editing = !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"]');
+    const inWidget = !!target.closest('[role="menu"], [role="radiogroup"], [role="tablist"]'); // their own keys, as in App
+    if (e.key.toLowerCase() === 'l' && !e.altKey && !e.repeat && (combo || (!editing && !inWidget))) { e.preventDefault(); reveal(); return; }
+    if (e.key !== 'Escape' || combo || player.view || player.queueOpen) return;
+    if (details) details = null;
+    else if (dig.open) { dig.open = false; document.querySelector<HTMLButtonElement>('[aria-label="Dig into your music"]')?.focus(); }
+    else if (toolbar.mode !== 'library') { backToSelector(); document.querySelector<HTMLButtonElement>('[aria-label="Choose toolbar mode"]')?.focus(); }
+    else return;
+    e.preventDefault();
+  }
   // Both bars follow the app's idle timer. Hover, keyboard focus and open menus keep the top visible.
   const touchAtLoad = matchMedia('(hover: none), (pointer: coarse)').matches;
   let touch = $state(touchAtLoad);
@@ -418,21 +464,15 @@
 {/snippet}
 
 <!-- an image dropped anywhere becomes the custom background -->
-<svelte:window onkeydown={e => {
-  if (e.key !== 'Escape' || e.defaultPrevented || player.view || player.queueOpen || player.visOpen) return;
-  if (details) details = null;
-  else if (dig.open) { dig.open = false; document.querySelector<HTMLButtonElement>('[aria-label="Dig into your music"]')?.focus(); }
-  else if (toolbar.mode !== 'library') { backToSelector(); document.querySelector<HTMLButtonElement>('[aria-label="Choose toolbar mode"]')?.focus(); }
-  else return;
-  e.preventDefault();
-}} onpointermove={onmove} {ontouchstart}
+<svelte:window {onkeydown} onpointermove={onmove} {ontouchstart}
   onfocusin={(e) => chromeFocus(e.target)} onfocusout={(e) => chromeFocus(e.relatedTarget)}
   ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); const f = e.dataTransfer?.files[0]; if (f) importBackground(f); }} />
 
 <!-- the material sits on the cards' layer so it scrolls and drifts with them, or on the fixed viewport behind them -->
 <!-- ponytail: a mouse wheel moves cover flow by its raw steps, no easing. Ease it if a notch feels abrupt -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="scroll" inert={covered} class:tilt class:flow class:fill={!bg.tile} class:m-vinyl={!onCards && bg.material === 'vinyl'} class:m-grille={!onCards && bg.material === 'grille'}
-  class:m-fabric={!onCards && bg.material === 'fabric'} class:m-custom={!onCards && (bg.material === 'custom' || bg.material === 'noise')} style:--custom={bg.material === 'noise' ? `url("${noiseBackground}")` : bg.custom ? `url("${bg.custom}")` : 'none'} {onscroll} {onscrollend} onwheel={(e) => { if (flow && !e.deltaX) scroller.scrollLeft += e.deltaY; else if (e.deltaY < 0 && scrollTop <= 4) revealAtTop(); }} bind:this={scroller} bind:clientWidth={viewportWidth} bind:clientHeight={viewportHeight}>
+  class:m-fabric={!onCards && bg.material === 'fabric'} class:m-custom={!onCards && (bg.material === 'custom' || bg.material === 'noise')} style:--custom={bg.material === 'noise' ? `url("${noiseBackground}")` : bg.custom ? `url("${bg.custom}")` : 'none'} {onscroll} {onscrollend} onpointerdown={() => (want = '')} onwheel={(e) => { want = ''; if (flow && !e.deltaX) scroller.scrollLeft += e.deltaY; else if (e.deltaY < 0 && scrollTop <= 4) revealAtTop(); }} bind:this={scroller} bind:clientWidth={viewportWidth} bind:clientHeight={viewportHeight}>
   {#if searching}
     <CatalogSearch bind:kind={searchKind} top={filterHeight} cols={effectiveCols} gap={pixelGap} card={collectionCard}
       onclear={() => { query = ''; filterChanged(); }}

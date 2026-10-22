@@ -461,6 +461,34 @@ try {
     run('wait', '--fn', 'window.__auditAudio[0].paused');
     assert(`document.querySelector('.album-view .track-row:nth-child(3).current .track').getAttribute('aria-label').startsWith('Play ')`, 'Selecting the current occurrence again must pause it');
     capture(size, 'playlist-duplicate-occurrence');
+    // L jumps to the playing album in one press, even while a search hides it
+    run('press', 'Escape');
+    run('fill', '[aria-label="Collection type"]', 'Albums');
+    run('click', '[role="option"]');
+    run('wait', '.tile-wrap');
+    evaluate(`document.querySelector('.scroll').scrollTop=2000`);
+    run('wait', '300');
+    evaluate(`(() => { const top=document.querySelector('.scroll').getBoundingClientRect().top; const wrap=[...document.querySelectorAll('.tile-wrap')].find(w=>w.getBoundingClientRect().top>top+200); window.__auditJump=wrap.querySelector('.tile').getAttribute('aria-label'); wrap.querySelector('.tile-play button').click(); })()`);
+    run('wait', '--fn', '!!document.querySelector(".tile-wrap.listening")');
+    run('fill', '[aria-label="Search library"]', 'Quiet evenings');
+    run('wait', '.results');
+    evaluate('document.activeElement?.blur()');
+    run('press', 'l');
+    run('wait', '1000');
+    assert(`(() => { const tile=document.querySelector('.tile-wrap.listening .tile'); if (document.querySelector('.results') || !tile || tile.getAttribute('aria-label')!==window.__auditJump) return false; const r=tile.getBoundingClientRect(); return r.top>=0 && r.bottom<=innerHeight; })()`, 'One press of L must clear the search and bring the playing album into view');
+    // a search that matches the playing album still hides it behind the results: L clears it and brings the album back
+    evaluate(`(() => { const i=document.querySelector('[aria-label="Search library"]'); i.value=window.__auditJump.slice(5).split(' — ')[0]; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    run('wait', '.results');
+    evaluate('document.activeElement?.blur()');
+    run('press', 'l');
+    run('wait', '1000');
+    assert(`(() => { const tile=document.querySelector('.tile-wrap.listening .tile'); if (document.querySelector('.results') || !tile) return false; const r=tile.getBoundingClientRect(); return r.top>=0 && r.bottom<=innerHeight; })()`, 'L must clear a search that matches the playing album and bring the album into view');
+    // L over open album details closes them and keeps the album in view, the same as when a filter hid it
+    evaluate(`document.querySelector('.tile-wrap.listening .tile').click()`);
+    run('wait', '.album-view');
+    run('press', 'l');
+    run('wait', '1000');
+    assert(`(() => { if (document.querySelector('.album-view')) return false; const tile=document.querySelector('.tile-wrap.listening .tile'); const r=tile.getBoundingClientRect(); return r.top>=0 && r.bottom<=innerHeight; })()`, 'L over open album details must close them and keep the playing album in view');
     results.push({ size, status: 'passed' });
     console.log(`${size}: passed`);
   }

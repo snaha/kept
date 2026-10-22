@@ -417,6 +417,69 @@ describe('review regressions', () => {
     await view.unmount(); await tick();
     expect(TestImage.started.slice(1).every(image => image.src === '')).toBe(true); // unmount releases the loads still in flight
   });
+  it('treats an active search as hiding the playing album, even when the query matches it', async () => {
+    const albums = Array.from({ length: 240 }, (_, i) => ({ ...tile, id: `local:album:${i}`, rawId: String(i), title: `Album ${i}`, cover: `/cover-${i}.png` }));
+    library.mode = 'albums'; library.loading = false;
+    const view = render(Grid, { tiles: albums, onpick: () => {}, activeId: 'local:album:150', hidden: false }); await tick();
+    const search = document.querySelector<HTMLInputElement>('[aria-label="Search library"]')!;
+    search.value = 'Album 150'; search.dispatchEvent(new Event('input', { bubbles: true })); await tick();
+    expect(document.querySelector('.results')).not.toBeNull(); expect(document.querySelector('.grid .tile')).toBeNull(); // results replace the wall
+    search.blur();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true })); await tick();
+    expect(search.value).toBe(''); expect(document.querySelector('.results')).toBeNull();
+    await vi.waitFor(() => { const r = document.querySelector('[aria-label="Open Album 150 — Artist"]')!.getBoundingClientRect(); expect(r.top).toBeGreaterThanOrEqual(0); expect(r.bottom).toBeLessThanOrEqual(innerHeight); }, { timeout: 3000 }); // the smooth scroll settles
+    // L inside a menu, radio group or tab list is theirs
+    const menu = document.createElement('div'); menu.setAttribute('role', 'menu'); menu.tabIndex = 0; document.body.append(menu); menu.focus();
+    search.value = 'Album 150'; search.dispatchEvent(new Event('input', { bubbles: true })); await tick();
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true })); await tick();
+    expect(search.value).toBe('Album 150');
+    menu.remove();
+    await view.unmount();
+  });
+  it('jumps to a playing album hidden by the cover filter, and drops a jump whose list settles without the album', async () => {
+    const albums = Array.from({ length: 240 }, (_, i) => ({ ...tile, id: `local:album:${i}`, rawId: String(i), title: `Album ${i}`, cover: i === 5 ? '' : `/cover-${i}.png` }));
+    const playlist = { ...tile, id: 'local:playlist:p', rawId: 'p', kind: 'playlist' as const, title: 'Quiet evenings' };
+    const press = () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true }));
+    const scroller = () => document.querySelector<HTMLElement>('.scroll')!;
+    writePreference('covers.only', '1');
+    library.mode = 'albums'; library.loading = false;
+    try {
+    const view = render(Grid, { tiles: albums, onpick: () => {}, activeId: 'local:album:5', hidden: false }); await tick();
+    expect(document.querySelector('[aria-label="Open Album 4 — Artist"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Open Album 5 — Artist"]')).toBeNull(); // the coverless album is filtered out
+    press(); await tick();
+    expect(document.querySelector('[aria-label="Open Album 5 — Artist"]')).not.toBeNull(); // L clears the cover filter like Reset filters does
+    await new Promise(resolve => setTimeout(resolve, 300)); // the smooth scroll to it settles
+    // from playlists, L switches to albums; leaving albums before they arrive settles the list without the album, so
+    // picking albums again later must open at the top instead of jumping to it
+    const albumsRequest = deferred<ReturnType<typeof ok>>();
+    session.api = api({ getAlbumList2: vi.fn(() => albumsRequest.promise) });
+    library.mode = 'playlists'; library.tiles = [playlist];
+    await view.rerender({ tiles: [playlist], activeId: 'local:album:100' }); await tick();
+    scroller().scrollTop = 0; await tick(); expect(scroller().scrollTop).toBe(0);
+    press(); await tick();
+    expect(library.mode).toBe('albums'); expect(library.loading).toBe(true);
+    await setMode('playlists'); await tick(); // the user goes back before the albums arrive
+    expect(library.loading).toBe(false);
+    albumsRequest.resolve(ok({ albumList2: { album: [] } })); await tick();
+    await view.rerender({ tiles: albums }); await tick();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(scroller().scrollTop).toBe(0);
+    // scrolling while the albums are still coming in means the user moved on: the album arriving must not scroll them away
+    const later = deferred<ReturnType<typeof ok>>();
+    session.api = api({ getAlbumList2: vi.fn(() => later.promise) });
+    library.mode = 'playlists'; library.tiles = [playlist];
+    await view.rerender({ tiles: [playlist] }); await tick();
+    press(); await tick();
+    expect(library.loading).toBe(true);
+    scroller().dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true })); await tick();
+    later.resolve(ok({ albumList2: { album: [] } })); await tick();
+    library.loading = false; await view.rerender({ tiles: albums }); await tick();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(scroller().scrollTop).toBe(0);
+    await view.unmount();
+    } finally { writePreference('covers.only', '0'); }
+  });
   it('lets the real Settings modal own focus above Queue and restores the queue control', async () => {
     play([track]);
     render(Queue, { onclose: () => {}, palette: '', options: createRawSnippet(() => ({ render: () => '<div></div>' })) }); await tick();
