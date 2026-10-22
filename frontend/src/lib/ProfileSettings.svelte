@@ -24,7 +24,10 @@
   }
   // the library owns the scan request and its polling; the buttons stay in place and keep focus while they wait
   const scanBlocked = $derived(!session.api || library.scan.pending || library.scan.scanning);
-  async function scan(full: boolean) { if (scanBlocked) return; error = ''; const problem = await requestScan(full); if (problem) error = problem; }
+  // what the scan is doing, or why it could not start or be checked, on a line that is always there so the sections below never move
+  const scanStatus = $derived(!session.api ? '' : library.scan.startError || library.scan.error || (library.scan.scanning ? 'Indexing…' : library.scan.pending ? 'Starting a scan…' : ''));
+  const scanFailed = $derived(!!(library.scan.startError || library.scan.error));
+  function scan(full: boolean) { if (!scanBlocked) void requestScan(full); }
 </script>
 
 {#if status}
@@ -45,7 +48,7 @@
       <Button variant="ghost" aria-disabled={scanBlocked} onclick={() => scan(false)}>Scan for changes</Button>
       <Button variant="ghost" aria-disabled={scanBlocked} onclick={() => scan(true)}>Full rescan</Button>
     </div>
-    {#if session.api && (library.scan.pending || library.scan.scanning)}<p role="status">{library.scan.scanning ? 'Indexing…' : 'Starting a scan…'}</p>{/if}
+    <p class="scan-status" class:error={scanFailed} role={scanFailed ? 'alert' : 'status'}>{scanStatus}</p>
     <details>
       <summary>Preview profiles</summary>
       <p>A fresh profile starts with setup. Copying keeps your normal Music data separate. Switching profiles restarts the app.</p>
@@ -84,6 +87,7 @@
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
   .actions + .actions { margin-top: 12px; }
   .actions :global([aria-disabled="true"]) { opacity: .5; cursor: default; }
+  .scan-status { min-height: 21px; margin-top: 12px; }
   details { border-top: 1px solid var(--ui-border); }
   summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; font-weight: 550; cursor: pointer; list-style: none; }
   summary::-webkit-details-marker { display: none; }
