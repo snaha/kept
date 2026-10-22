@@ -172,7 +172,7 @@
   const barShown = $derived(dig.open || toolbar.selecting || toolbar.mode !== 'library' || controlsFocused || !!rightView || overBrowse || scrollRevealed || (!touch && pointerObserved && pointerNearTop) || (!hidden && !player.topHidden && (touch || pointerNearTop)));
   $effect(() => { if (!barShown) toolbar.selecting = false; });
   $effect(() => { document.documentElement.style.setProperty('--topbar', `${filterHeight}px`); });
-  $effect(() => { document.documentElement.style.setProperty('--browsebar', `${barShown ? filterHeight : 0}px`); });
+  $effect(() => { document.documentElement.style.setProperty('--browsebar', `${barShown && !library.details ? filterHeight : 0}px`); });
   $effect(() => { document.documentElement.style.setProperty('--sidebar', '0px'); });
   function chromeFocus(target: EventTarget | null) {
     controlsFocused = target instanceof Element && !!target.closest('.browse, .library-select-menu') && target.matches(':focus-visible');
