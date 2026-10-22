@@ -388,16 +388,16 @@
       <div class="controls">
         {#if advancedLayout}<label class="slider-control"><span>Columns</span><Slider type="single" min={1} max={10} step={1} value={cols} onValueChange={value => (cols = value)} aria-label="Album columns" /><output>{cols}</output></label><label class="slider-control"><span>Gap</span><Slider type="single" min={0} max={160} step={1} value={gap} onValueChange={value => (gap = value)} aria-label="Album spacing" /><output>{gap}</output></label>
         {:else}<label class="slider-control"><span>Grid size</span><Slider type="single" min={1} max={10} step={1} value={11 - cols} onValueChange={resizeGrid} aria-label="Advanced grid size" /><output>{effectiveCols} across</output></label>{/if}
-        <Button variant="outline" size="sm" aria-pressed={advancedLayout} onclick={() => (advancedLayout = !advancedLayout)}>{advancedLayout ? 'Simple' : 'Advanced'}</Button>
+        <Button variant={advancedLayout ? 'default' : 'outline'} size="sm" aria-pressed={advancedLayout} onclick={() => (advancedLayout = !advancedLayout)}>{advancedLayout ? 'Simple' : 'Advanced'}</Button>
       </div>
     {:else if toolbar.mode === 'look'}
       <div class="controls"><span class="group" role="radiogroup" aria-label="Background">{#each Object.entries(MATERIALS) as [key, label] (key)}<button class="opt" class:on={bg.material === key} role="radio" aria-checked={bg.material === key} disabled={key === 'custom' && !bg.custom} onclick={() => (bg.material = key as keyof typeof MATERIALS)}>{label}</button>{/each}<button class="opt" onclick={randomBackground}>Random</button></span></div>
     {:else if toolbar.mode === '3d'}
       <div class="controls">
         <span class="group" role="radiogroup" aria-label="3D view">{#each Object.entries(VIEWS) as [key, label] (key)}<button class:on={view3d === key} role="radio" aria-checked={view3d === key} onclick={() => setView(key as View)}>{label}</button>{/each}</span>
-        {#if view3d !== 'off'}<Button variant="outline" size="sm" aria-pressed={loop} onclick={() => (loop = !loop)}>Loop</Button>{/if}
-        {#if view3d === 'grid' && loop}<Button variant="outline" size="sm" aria-pressed={inf} onclick={() => (inf = !inf)}>Endless sides</Button>{/if}
-        {#if view3d === 'jukebox' || view3d === 'flow'}<Button variant="outline" size="sm" aria-pressed={reflect} onclick={() => (reflect = !reflect)}>Reflections</Button>{/if}
+        {#if view3d !== 'off'}<Button variant={loop ? 'default' : 'outline'} size="sm" aria-pressed={loop} onclick={() => (loop = !loop)}>Loop</Button>{/if}
+        {#if view3d === 'grid' && loop}<Button variant={inf ? 'default' : 'outline'} size="sm" aria-pressed={inf} onclick={() => (inf = !inf)}>Endless sides</Button>{/if}
+        {#if view3d === 'jukebox' || view3d === 'flow'}<Button variant={reflect ? 'default' : 'outline'} size="sm" aria-pressed={reflect} onclick={() => (reflect = !reflect)}>Reflections</Button>{/if}
       </div>
     {:else if toolbar.mode === 'theme'}<ComponentStyles />{/if}
     </div>
