@@ -39,9 +39,11 @@
     <div class="actions">
       <Button variant="outline" disabled={!!busy} onclick={() => folder('add')}>Add music folder</Button>
       <Button variant="ghost" disabled={!!busy} onclick={() => folder('replace')}>Replace music folders</Button>
+      <Button variant="ghost" onclick={async () => { const problem = await window.desktop!.showData(); if (problem) error = problem; }}>Show data folder</Button>
+    </div>
+    <div class="actions">
       <Button variant="ghost" aria-disabled={scanBlocked} onclick={() => scan(false)}>Scan for changes</Button>
       <Button variant="ghost" aria-disabled={scanBlocked} onclick={() => scan(true)}>Full rescan</Button>
-      <Button variant="ghost" onclick={async () => { const problem = await window.desktop!.showData(); if (problem) error = problem; }}>Show data folder</Button>
     </div>
     {#if session.api && (library.scan.pending || library.scan.scanning)}<p role="status">{library.scan.scanning ? 'Indexing…' : 'Starting a scan…'}</p>{/if}
     <details>
@@ -80,6 +82,7 @@
   .folder-row { display: flex; align-items: center; gap: 12px; }
   .folder-row > span { flex: 1; min-width: 0; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .actions + .actions { margin-top: 12px; }
   .actions :global([aria-disabled="true"]) { opacity: .5; cursor: default; }
   details { border-top: 1px solid var(--ui-border); }
   summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; font-weight: 550; cursor: pointer; list-style: none; }
