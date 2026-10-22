@@ -24,9 +24,13 @@
   const shown = $derived(tracks.map((track, index) => ({ track, index })).filter(({ track }) => `${track.title} ${track.artist ?? ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
   const totalSeconds = $derived(tracks.reduce((sum, track) => sum + (track.duration ?? 0), 0));
   const genreYear = $derived([...info.genres, ...(info.year ? [String(info.year)] : [])].join(' • '));
-  // once the heading has scrolled under the top row, the title sits in the row instead
+  // once the title has scrolled halfway under the top row, it sits in the row instead
   let heading = $state<HTMLElement>(), collapsed = $state(false);
-  function onscroll() { if (heading) collapsed = heading.getBoundingClientRect().bottom <= (heading.closest('.album-view')?.querySelector('header')?.getBoundingClientRect().bottom ?? 0); }
+  function onscroll() {
+    if (!heading) return;
+    const title = heading.getBoundingClientRect(), row = heading.closest('.album-view')?.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+    collapsed = title.top + title.height / 2 <= row;
+  }
   $effect(() => { const cover = tile.cover; let active = true; void artworkPalette(cover).then(value => { if (active) palette = value; }); return () => { active = false; }; });
   $effect(() => {
     requestKey;
@@ -131,8 +135,8 @@
       {#if preferences}<AlbumTraits {tile} />{/if}
     </div>
   {/snippet}
-  <div class="heading" bind:this={heading}>
-    <h1>{tile.title}</h1>
+  <div class="heading">
+    <h1 bind:this={heading}>{tile.title}</h1>
     <div class="heading-meta">
       <p class="artist">{tile.sub}</p>
       {#if genreYear}<p class="genre-year">{genreYear}</p>{/if}
