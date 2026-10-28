@@ -2,6 +2,7 @@
 
 Maintained coverage for the core-library fixes and PR #12 review. These are
 assertions and remaining gaps, not a claim that every environment was exercised.
+Use the [feature map](feature-map.md) to select affected behavior contracts.
 See [the runbook](application-review.md) for check selection and native steps,
 and [dated validation](core-validation.md) for earlier results.
 
@@ -23,6 +24,9 @@ Component cases below live in
 | Duplicate tracks share current indicator/DOM identity; shuffle edits lose previous/successor | Component `preserves a queue row and keyboard focus`; desktop player checks exact collection occurrences, replay, shuffle move/removal/previous/next/current successor | UI indicators/actions in agent journey; audible continuity native |
 | Queued native media events undo newer pause/resume | Desktop player dispatches late play/pause events and asserts actual current state | Deterministic fake event order; application fixture uses real media elements |
 | Recorded play collapses history pages or enters a nonmatching query; retry truncates history | [history.test.js](../desktop/history.test.js) loaded tail/window after record and failed write/retry, filtered insertion, account/port changes, stale reads/clear | Real SQLite/compiled frontend; visible scroll needs browser journey |
+| `history.retry-pagination`: Retry abandons a failed older-window request | [history.test.js](../desktop/history.test.js) `[history.retry-pagination]` at 150 loaded rows, filtered/unfiltered, keeps visible IDs on failure then completes 200 rows in durable order | Real SQLite/compiled frontend; DOM scroll/focus remains separate |
+| `history.play-during-pagination`: a new play cancels a user's pending older-window request | `[history.play-during-pagination]` holds the real older response, starts a play, delivers stale response while refresh waits; asserts loading ownership, requested window and following-page continuity | Real SQLite/compiled frontend; DOM scroll/focus remains separate |
+| `history.write-retry` / harness ownership: lost write acknowledgement duplicates a play, or fault fixtures outlive a test | `[history.write-retry]` retries a committed write whose acknowledgement failed, without duplication; teardown case drains a held read, closes its worker and restores globals | Real SQLite/compiled frontend using [reusable controls](../desktop/tests/history-harness.mjs); no actual Electron IPC fault injection |
 | Durable history loses duplicate position, repeats import or drops queued writes | [music-store.test.js](../desktop/music-store.test.js) search/old plays/duplicate context/idempotent import/reopen, worker serialization/close | Real SQLite/worker; browser-origin import still native |
 | Side effects start at import or outlive unmount | Component `starts side effects once and disposes preference subscriptions and pending playback` | Runtime ownership; native quit/child exit separate |
 | Malformed preferences/quota blocks playback or silently loses changes | Component `recovers malformed saved JSON and retries failed writes` | Simulated failures; native profile corruption is not automatically repaired |
@@ -62,6 +66,22 @@ Component cases below live in
 - The mac-only repository launcher now uses package metadata and a platform guard.
   Build/native launch checks suit this change; a negative source-string test would
   not establish that the bundle actually runs.
+
+## Review workflow and history controls — 15 October 2026
+
+Seven history cases pass, including both pagination contracts in filtered and
+unfiltered history, lost-write-acknowledgement recovery and harness cleanup. The
+four pagination cases fail at their intended outcome assertions against a history
+module that reconciles a single page per play and drops the pending window.
+
+Full desktop validation passes (29 desktop cases plus 7 frontend helper cases),
+as do frontend typechecking, the frontend build and review-skill validation. The
+build retains its existing large-chunk warning.
+
+The feature map routes review scope to these stable behavior IDs. Review reports
+must distinguish named scenario evidence from code-reviewed/untested promises and
+record intentional behavior changes separately. No new UI/native/scroll, audible
+output or performance result is claimed by this test-infrastructure change.
 
 ## Maintain the ledger
 
