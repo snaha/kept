@@ -22,3 +22,7 @@ navidrome/data/
 # tagsmith dependencies and dry-run state
 tagsmith/node_modules/
 tagsmith/work/
+
+# a local test library and what tagsmith knows about it: audio, paths and tags never committed
+test_library/
+tagsmith/fixtures/local/
