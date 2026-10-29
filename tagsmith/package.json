@@ -10,10 +10,12 @@
   "scripts": {
     "tagsmith": "node src/cli.ts",
     "check": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:library": "scripts/test-library.sh"
   },
   "dependencies": {
-    "music-metadata": "^11.9.0"
+    "music-metadata": "^11.9.0",
+    "node-taglib-sharp": "6.0.3"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
