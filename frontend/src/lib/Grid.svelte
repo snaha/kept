@@ -39,7 +39,33 @@
   let gap = $state(savedNumber('grid.gap', 48, 0, 160));
   let coversOnly = $state(readPreference('covers.only') === '1'); // off by default
   let motion = $state(readPreference('motion') === '1'); // off by default
-  type BarMode = 'library' | 'filters' | 'layout' | 'look' | 'theme';
+  // 3D: the grid lies on a plane tilted back from the bottom edge and scrolls away into the distance, like a title crawl.
+  // The views are picked in the 3D control set of the Display options
+  const VIEWS = { off: 'Off', grid: 'Grid', jukebox: 'Jukebox', flow: 'Cover flow' } as const;
+  type View = keyof typeof VIEWS;
+  const saved3d = readPreference('grid.3d');
+  let view3d = $state<View>(saved3d in VIEWS ? (saved3d as View) : saved3d === '1' ? 'grid' : 'off');
+  let query = $state('');
+  const searching = $derived(!!query.trim());
+  // search results are a flat list that scrolls on its own, so a search leaves the 3D views until it is cleared
+  const mode3d = $derived<View>(searching ? 'off' : view3d);
+  const tilt = $derived(mode3d !== 'off');
+  // the material never rides the tilted plane: textured, every tile of that huge plane has to be drawn, far more than the
+  // GPU keeps, so it redraws them all on every frame (~250ms). It stays on the screen behind the plane instead
+  const onCards = $derived(bg.scroll && !tilt);
+  // loop: the tilted grid never ends, past the last album it starts again from the first
+  let loop = $state(readPreference('grid.loop') === '1');
+  // inf: with loop on, the columns repeat sideways too, so the plane has no edge in any direction
+  let inf = $state(readPreference('grid.inf') === '1');
+  // jukebox: a single row up the plane. The covers do not lie on it: each is tipped up off it, over the one behind
+  const jukebox = $derived(mode3d === 'jukebox');
+  // cover flow: a single row across the screen that scrolls sideways. The middle cover faces front, the rest are turned
+  // toward it in a stack on either side
+  const flow = $derived(mode3d === 'flow');
+  const single = $derived(jukebox || flow);
+  // reflect: the covers of a single row mirror faintly in the floor under them
+  let reflect = $state(readPreference('grid.reflect') === '1');
+  type BarMode = 'library' | 'filters' | 'layout' | 'look' | '3d' | 'theme';
   function closeModes() {
     if (document.activeElement?.matches(':focus-visible')) document.querySelector<HTMLButtonElement>('[aria-label="Choose toolbar mode"]')?.focus();
     toolbar.selecting = false;
@@ -49,11 +75,10 @@
   $effect(() => {
     writePreference('grid.cols', String(cols)); writePreference('grid.gap', String(gap));
     writePreference('covers.only', coversOnly ? '1' : '0'); writePreference('motion', motion ? '1' : '0');
+    writePreference('grid.3d', view3d); writePreference('grid.loop', loop ? '1' : '0'); writePreference('grid.inf', inf ? '1' : '0'); writePreference('grid.reflect', reflect ? '1' : '0');
     writePreference('library.source', library.source);
   });
-  let query = $state('');
   let searchKind = $state('all');
-  const searching = $derived(!!query.trim());
   const searchAccount = $derived(JSON.stringify([session.base, session.username]));
   const catalogRevision = $derived(library.revision);
   $effect(() => {
@@ -85,7 +110,9 @@
     const tile = candidates[Math.floor(Math.random() * candidates.length)];
     discoveryId = tile.id;
     const index = shown.findIndex(t => t.id === tile.id);
-    scroller?.scrollTo({ top: Math.floor(index / effectiveCols) * rowStep, behavior: 'instant' });
+    // the pick becomes the front album: its seek echoes as a scroll, so a resize or Loop toggle later must not go back
+    if (tilt) { front = Math.floor(index / across) * across; seek((looping ? middle(period) : 0) + front / across * pitch); }
+    else scroller?.scrollTo({ top: Math.floor(index / effectiveCols) * rowStep, behavior: 'instant' });
   }
   let filterHeight = $state(110);
   $effect(() => { const mode = library.mode; untrack(() => { artistFilter = ''; if (mode === 'playlists' && sort === 'recent') sort = 'library'; }); });
@@ -106,7 +133,7 @@
   }));
   const shown = $derived(view.collections);
   onMount(() => registerBrowseSource(() => searching ? catalogSearch.collections : view.collections));
-  function filterChanged() { scrollTop = 0; details = null; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
+  function filterChanged() { scrollTop = 0; details = null; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0, left: 0 }); front = 0; if (looping) seek(middle(period)); }
   function changeMode(mode: Mode) { artistFilter = ''; favoritesOnly = false; filterChanged(); void setMode(mode); }
   function changeSource() { artistFilter = ''; filterChanged(); }
   function resetFilters() { query = ''; artistFilter = ''; library.source = 'all'; sort = DEFAULT_SORT; sortDirection = 1; showFilter = 'all'; favoritesOnly = false; coversOnly = false; resetDig(); filterChanged(); }
@@ -158,6 +185,120 @@
 
   // subtle whole-grid drift with the mouse; native scroll does the rest
   const drift = new Spring({ x: 0, y: 0 }, { stiffness: 0.05, damping: 0.5 });
+  // 3D: a sticky stage holds the plane in view while a spacer gives the page its scroll length, so native scrolling
+  // (wheel, touch, scrollbar, keys) still drives it; the plane slides along itself by the scroll distance.
+  // Only the covers on screen exist, placed one by one: rows up to DEPTH screens up the plane (deeper they are specks
+  // under the top bar, and a plane that big overflows what the GPU keeps), and on each row the columns the view spans
+  // at that depth. Cover flow scrolls sideways: there scrollTop holds the scrollLeft
+  const pos = () => (flow ? scroller.scrollLeft : scroller.scrollTop);
+  // sought: where the last seek went, so the scroll event it echoes is told apart from the user's own scrolling. A seek
+  // lands on a whole pixel at or before its target, so the cover it aims at stands at the front and never a hair past it
+  let sought = -1;
+  const seek = (v: number) => { v = Math.floor(v); if (flow) scroller.scrollLeft = v; else scroller.scrollTop = v; sought = v; scrollTop = pos(); };
+  const DEPTH = 5, SPAN = 1e7, TILT = 58, SIN = Math.sin((TILT * Math.PI) / 180);
+  // the plane is wider than the screen so its far end still fills the width; its sides run off the bottom corners
+  const PLANE_WIDTH = 1.6;
+  // jukebox: how far a cover is tipped up off the plane, the distance between covers as a part of their size, and the
+  // front cover's clearance above the player bar
+  const LIFT = 22, STEP = 0.6, BASE = 140;
+  // cover flow: how far the side covers are turned, and as parts of the cover size: the gap beside the middle cover,
+  // the distance between covers in a stack, how far back the stacks stand, and the row's lift above mid-screen
+  const TURN = 68, MID = 0.72, SIDE = 0.2, BACK = 0.45, FLOW_LIFT = 20;
+  const looping = $derived(tilt && loop && shown.length > 0);
+  const wrapping = $derived(looping && inf && !single);
+  const across = $derived(single ? 1 : effectiveCols);
+  const rows = $derived(Math.ceil(shown.length / across));
+  const planeW = $derived(PLANE_WIDTH * viewportWidth);
+  const tile = $derived(flow ? Math.min(viewportWidth * 0.4, viewportHeight * 0.5) : jukebox ? Math.min(viewportWidth * 0.5, viewportHeight * 0.8) : (planeW - (effectiveCols + 1) * pixelGap) / effectiveCols);
+  const pitch = $derived(flow ? tile * SIDE * 1.5 : jukebox ? tile * STEP : tile + pixelGap);
+  const period = $derived(rows * pitch);
+  const mod = (a: number, n: number) => ((a % n) + n) % n;
+  // looping: the page gets a scroll length nobody reaches the end of and the plane moves by the scroll modulo one pass
+  // through the library, so the wrap never touches the scroll position and momentum carries straight through it
+  const offset = $derived(looping ? mod(scrollTop, period) : scrollTop);
+  const middle = (p: number) => SPAN / 2 - mod(SPAN / 2, p);
+  // the album at the front, as a possibly fractional index into shown, kept up to date by scrolling. Whenever the period
+  // changes (a resize, a view or loop switch, albums arriving from a scan) or a search ends, the plane seeks back to it,
+  // so the front album never jumps somewhere unrelated. Looping starts in the middle of the page: whole passes, same view
+  let front = 0;
+  // the scrollbar gutter comes and goes with the views, and the width binding's observer does not see that
+  $effect(() => { tilt; untrack(() => { viewportWidth = scroller.clientWidth; }); });
+  $effect(() => { const p = period, on = looping; mode3d; if (!tilt) return; untrack(() => seek((on ? middle(p) : 0) + front / across * pitch)); });
+  // a search in a 3D view starts its flat results at the top, not wherever the plane's long scroll was
+  $effect(() => { if (searching) untrack(() => { if (view3d !== 'off') scroller?.scrollTo({ top: 0, left: 0 }); }); });
+  // switching between the views keeps the album at the front where it is; from the flat grid the first row below the
+  // toolbar moves to the front, and Off lands the flat grid on the front album's row
+  function setView(next: View) {
+    front = tilt ? offset / pitch * across : Math.max(0, Math.ceil((scroller.scrollTop - pixelGap) / rowStep)) * effectiveCols;
+    view3d = next;
+    if (next === 'off') requestAnimationFrame(() => { scroller.scrollTo({ top: Math.floor((Math.round(front) % Math.max(1, shown.length)) / effectiveCols) * rowStep, behavior: 'instant' }); scrollTop = pos(); });
+  }
+  // single row: the covers in view, each with its place p in the row counted in covers from the front one (jukebox) or
+  // the middle one (cover flow). In the jukebox the one before the front (p < 0) is the cover leaving the row
+  const discs = $derived.by(() => {
+    const n = shown.length, out: { key: number; t: Tile; p: number }[] = [];
+    if (!single || !n || !(pitch > 0)) return out;
+    const at = offset / pitch, side = Math.ceil(viewportWidth / 2 / (SIDE * tile)) + 2;
+    let k0 = Math.floor(at) - (flow ? side : 0), k1 = flow ? Math.ceil(at) + side : Math.floor((offset + DEPTH * viewportHeight) / pitch);
+    if (!looping) { k0 = Math.max(0, k0); k1 = Math.min(n - 1, k1); }
+    const kr = looping ? Math.floor(scrollTop / period) * n : 0;
+    for (let k = k0; k <= k1; k++) out.push({ key: k + kr, t: shown[mod(k, n)], p: k - at });
+    return out;
+  });
+  // the line on screen the front cover stands on. Cover flow is seen from the covers' mid-height, as in iTunes: the
+  // side covers narrow evenly above and below, and their bottom edges rise toward the middle
+  const floorY = $derived(flow ? (viewportHeight + tile) / 2 - FLOW_LIFT : viewportHeight - BASE);
+  // where a cover of the row stands. Nearer covers paint over farther ones
+  function pose(p: number) {
+    if (flow) {
+      const t = Math.max(-1, Math.min(1, p)); // the turn happens within one place of the middle
+      return { z: -Math.round(Math.abs(p) * 10), o: 1, origin: '50% 50%',
+        tf: `translateX(${(t * MID + (p - t) * SIDE) * tile}px) translateZ(${-Math.abs(t) * BACK * tile}px) rotateY(${-t * TURN}deg)` };
+    }
+    // hinged on its bottom edge: moved up the tilted plane, then tipped up off it. Passing the front it slides on down
+    // off the screen and fades, gone by the time it is dropped
+    const d = p * pitch;
+    return { z: -Math.round(p), o: 1 - Math.max(0, -p), origin: '50% 100%', tf: `rotateX(${TILT}deg) translateY(${d < 0 ? -2 * d : -d}px) rotateX(${-LIFT}deg)` };
+  }
+  // cover flow comes to rest on a cover
+  function onscrollend() {
+    if (!flow || !(pitch > 0)) return;
+    const to = Math.round(pos() / pitch) * pitch;
+    if (Math.abs(to - pos()) > 1) scroller.scrollTo({ left: to, behavior: 'smooth' });
+  }
+  // the rows on screen with their covers. Keys count whole passes too, so crossing a seam keeps every node.
+  // Each row is a layer of its own, and a far row is drawn small and scaled back up (k): it shows at a fraction of its
+  // size, and at full size the rows together are more than the GPU keeps, so parts go undrawn
+  // ponytail: a row is redrawn when it crosses a step. Add hysteresis if scrolling back and forth over one shows
+  const bands = $derived.by(() => {
+    const n = shown.length, out: { key: number; y: number; k: number; cells: { c: number; t: Tile; x: number }[] }[] = [];
+    if (!tilt || single || !n || !(pitch > 0)) return out;
+    // rows past the bottom edge are off screen, and partly behind the camera, where they break the browser's drawing
+    // and hit testing of the whole plane
+    let r0 = Math.floor((offset + viewportHeight * (1 - DEPTH) - pixelGap) / pitch), r1 = Math.floor((offset + viewportHeight) / pitch);
+    if (!looping) { r0 = Math.max(0, r0); r1 = Math.min(rows - 1, r1); }
+    const kr = looping ? Math.floor(scrollTop / period) * rows : 0;
+    const xc = planeW / 2; // the plane point at the middle of the screen
+    for (let r = r0; r <= r1; r++) {
+      // size: how large the row shows, 1 at the bottom edge. Perspective is one screen height, the origin mid-screen
+      const d = Math.max(0, offset + viewportHeight - (pixelGap + r * pitch + tile / 2));
+      const size = 1 / (1 + (d * SIN) / viewportHeight), k = size > 0.6 ? 1 : size > 0.3 ? 2 : 4, cells = [];
+      // the view widens with the distance up the plane. A row holds the columns in view at the far end of its step, so
+      // they change only when it is redrawn anyway: dropping them one by one as it nears redraws it each time
+      const half = viewportWidth / 2 / (k === 1 ? 0.6 : k === 2 ? 0.3 : 1 / (1 + DEPTH * SIN)) + pitch;
+      let c0 = Math.floor((xc - half - pixelGap) / pitch), c1 = Math.floor((xc + half) / pitch);
+      if (!wrapping) { c0 = Math.max(0, c0); c1 = Math.min(effectiveCols - 1, c1); }
+      for (let c = c0; c <= c1; c++) {
+        const i = mod(r, rows) * effectiveCols + mod(c, effectiveCols);
+        if (!looping && i >= n) break;
+        cells.push({ c, t: shown[i % n], x: pixelGap + c * pitch });
+      }
+      out.push({ key: r + kr, y: pixelGap + r * pitch, k, cells });
+    }
+    return out;
+  });
+  // the plane's shift along itself: scroll plus the mouse drift
+  const shiftX = $derived(drift.current.x * -8), shiftY = $derived(-offset + drift.current.y * -6);
   // Both bars follow the app's idle timer. Hover, keyboard focus and open menus keep the top visible.
   const touchAtLoad = matchMedia('(hover: none), (pointer: coarse)').matches;
   let touch = $state(touchAtLoad);
@@ -203,8 +344,9 @@
   onDestroy(() => { clearTimeout(leaveTimer); clearTimeout(scrollRevealTimer); });
   function onscroll(e: Event) {
     const next = (e.currentTarget as HTMLElement).scrollTop;
-    if (next < scrollTop && next <= 4) revealAtTop();
-    scrollTop = next;
+    if (!flow && next < scrollTop && next <= 4) revealAtTop();
+    scrollTop = tilt ? pos() : next;
+    if (tilt && Math.abs(pos() - sought) >= 1) front = offset / pitch * across;
   }
 </script>
 
@@ -227,7 +369,7 @@
     <div class="bar-modes" class:expanded={toolbar.selecting}>
       <button class="icon-button" aria-label="Choose toolbar mode" aria-expanded={toolbar.selecting} aria-controls="toolbar-mode-options" title="Display options" onclick={() => (toolbar.selecting = !toolbar.selecting)}><Icon name="filter" /></button>
       <div class="mode-options" id="toolbar-mode-options" use:keyboardScope={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeModes(); } }} inert={!toolbar.selecting}>
-        {#each [['library', 'Library'], ['filters', 'Filters'], ['layout', 'Layout'], ['look', 'Background'], ['theme', 'Theme']] as [mode, label] (mode)}
+        {#each [['library', 'Library'], ['filters', 'Filters'], ['layout', 'Layout'], ['look', 'Background'], ['3d', '3D'], ['theme', 'Theme']] as [mode, label] (mode)}
           <button aria-label={label === 'Filters' ? 'Library filters' : label} aria-pressed={toolbar.mode === mode} onclick={() => showMode(mode as BarMode)}>{label}</button>
         {/each}
       </div>
@@ -247,10 +389,17 @@
       <div class="controls">
         {#if advancedLayout}<label class="slider-control"><span>Columns</span><Slider type="single" min={1} max={10} step={1} value={cols} onValueChange={value => (cols = value)} aria-label="Album columns" /><output>{cols}</output></label><label class="slider-control"><span>Gap</span><Slider type="single" min={0} max={160} step={1} value={gap} onValueChange={value => (gap = value)} aria-label="Album spacing" /><output>{gap}</output></label>
         {:else}<label class="slider-control"><span>Grid size</span><Slider type="single" min={1} max={10} step={1} value={11 - cols} onValueChange={resizeGrid} aria-label="Advanced grid size" /><output>{effectiveCols} across</output></label>{/if}
-        <Button variant="outline" size="sm" aria-pressed={advancedLayout} onclick={() => (advancedLayout = !advancedLayout)}>{advancedLayout ? 'Simple' : 'Advanced'}</Button>
+        <Button variant={advancedLayout ? 'default' : 'outline'} size="sm" aria-pressed={advancedLayout} onclick={() => (advancedLayout = !advancedLayout)}>{advancedLayout ? 'Simple' : 'Advanced'}</Button>
       </div>
     {:else if toolbar.mode === 'look'}
       <div class="controls"><span class="group" role="radiogroup" aria-label="Background">{#each Object.entries(MATERIALS) as [key, label] (key)}<button class="opt" class:on={bg.material === key} role="radio" aria-checked={bg.material === key} disabled={key === 'custom' && !bg.custom} onclick={() => (bg.material = key as keyof typeof MATERIALS)}>{label}</button>{/each}<button class="opt" onclick={randomBackground}>Random</button></span></div>
+    {:else if toolbar.mode === '3d'}
+      <div class="controls">
+        <span class="group" role="radiogroup" aria-label="3D view">{#each Object.entries(VIEWS) as [key, label] (key)}<button class:on={view3d === key} role="radio" aria-checked={view3d === key} onclick={() => setView(key as View)}>{label}</button>{/each}</span>
+        {#if view3d !== 'off'}<Button variant={loop ? 'default' : 'outline'} size="sm" aria-pressed={loop} onclick={() => (loop = !loop)}>Loop</Button>{/if}
+        {#if view3d === 'grid' && loop}<Button variant={inf ? 'default' : 'outline'} size="sm" aria-pressed={inf} onclick={() => (inf = !inf)}>Endless sides</Button>{/if}
+        {#if view3d === 'jukebox' || view3d === 'flow'}<Button variant={reflect ? 'default' : 'outline'} size="sm" aria-pressed={reflect} onclick={() => (reflect = !reflect)}>Reflections</Button>{/if}
+      </div>
     {:else if toolbar.mode === 'theme'}<ComponentStyles />{/if}
     </div>
   {/if}
@@ -281,21 +430,55 @@
   ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); const f = e.dataTransfer?.files[0]; if (f) importBackground(f); }} />
 
 <!-- the material sits on the cards' layer so it scrolls and drifts with them, or on the fixed viewport behind them -->
-<div class="scroll" inert={covered} class:fill={!bg.tile} class:m-vinyl={!bg.scroll && bg.material === 'vinyl'} class:m-grille={!bg.scroll && bg.material === 'grille'}
-  class:m-fabric={!bg.scroll && bg.material === 'fabric'} class:m-custom={!bg.scroll && (bg.material === 'custom' || bg.material === 'noise')} style:--custom={bg.material === 'noise' ? `url("${noiseBackground}")` : bg.custom ? `url("${bg.custom}")` : 'none'} {onscroll} onwheel={(e) => { if (e.deltaY < 0 && scrollTop <= 4) revealAtTop(); }} bind:this={scroller} bind:clientWidth={viewportWidth} bind:clientHeight={viewportHeight}>
+<!-- ponytail: a mouse wheel moves cover flow by its raw steps, no easing. Ease it if a notch feels abrupt -->
+<div class="scroll" inert={covered} class:tilt class:flow class:fill={!bg.tile} class:m-vinyl={!onCards && bg.material === 'vinyl'} class:m-grille={!onCards && bg.material === 'grille'}
+  class:m-fabric={!onCards && bg.material === 'fabric'} class:m-custom={!onCards && (bg.material === 'custom' || bg.material === 'noise')} style:--custom={bg.material === 'noise' ? `url("${noiseBackground}")` : bg.custom ? `url("${bg.custom}")` : 'none'} {onscroll} {onscrollend} onwheel={(e) => { if (flow && !e.deltaX) scroller.scrollLeft += e.deltaY; else if (e.deltaY < 0 && scrollTop <= 4) revealAtTop(); }} bind:this={scroller} bind:clientWidth={viewportWidth} bind:clientHeight={viewportHeight}>
   {#if searching}
     <CatalogSearch bind:kind={searchKind} top={filterHeight} cols={effectiveCols} gap={pixelGap} card={collectionCard}
       onclear={() => { query = ''; filterChanged(); }}
       onartist={artist => { query = ''; filterChanged(); onpick(artist); }} />
   {:else}
-  <div class="grid" class:m-vinyl={bg.scroll && bg.material === 'vinyl'} class:m-grille={bg.scroll && bg.material === 'grille'}
-    class:m-fabric={bg.scroll && bg.material === 'fabric'} class:m-custom={bg.scroll && (bg.material === 'custom' || bg.material === 'noise')} style:--cols={effectiveCols} style:--gap="max(0.2px, calc({gap} * var(--u)))"
+  <div class="stage" class:tilt class:flow style:perspective-origin={flow ? `50% ${floorY - tile / 2}px` : undefined}>
+  {#if single}
+    <!-- jukebox and cover flow: every cover is its own small layer -->
+    {#each discs as { key, t, p } (key)}
+      {@const at = pose(p)}
+      <div class="disc" style:width="{tile}px" style:left="{(viewportWidth - tile) / 2}px" style:top="{floorY - tile}px"
+        style:z-index={at.z} style:opacity={at.o} style:transform-origin={at.origin} style:transform={at.tf}>
+        {@render collectionCard(t)}
+        <!-- the mirror image is a second, flipped image under the cover with a plain gradient over it, painted once into
+          the cover's own layer. The browser's reflection with a fade mask costs an offscreen pass per cover per frame
+          (2 fps), and without the mask it cannot follow the slanted bottom edges -->
+        {#if reflect && t.cover && (flow || p < 1)}<span class="mirror"><img src={t.cover} alt="" draggable="false" /></span>{/if}
+      </div>
+    {/each}
+    <!-- the mirror images fade to black, so the floor under the row is black too: the background fades into it behind the covers -->
+    {#if reflect}<div class="floor" style:--from="{floorY - tile * (flow ? 1 : 0.5)}px" style:--to="{floorY - tile * (flow ? 0.2 : 0)}px"></div>{/if}
+  {:else if tilt}
+    <!-- 3D: the plane, hinged at the bottom edge of the screen -->
+    <div class="plane" style:width="{planeW}px" style:left="{(viewportWidth - planeW) / 2}px" style:transform-origin="{planeW / 2}px {viewportHeight}px"
+      style:transform="rotateX({TILT}deg) translate3d({shiftX}px, {shiftY}px, 0)">
+      {#each bands as { key, y, k, cells } (key)}
+        <!-- zoom shrinks the row and all in it, shadows too, so scaled back up it looks the same; its own top is zoomed as well -->
+        <div class="band" style:zoom={1 / k} style:top="{y * k}px" style:transform="scale({k})">
+          {#each cells as { c, t, x } (c)}<div class="cell" style:left="{x}px" style:width="{tile}px">{@render collectionCard(t)}</div>{/each}
+        </div>
+      {/each}
+    </div>
+  {:else}
+  <div class="grid" class:m-vinyl={onCards && bg.material === 'vinyl'} class:m-grille={onCards && bg.material === 'grille'}
+    class:m-fabric={onCards && bg.material === 'fabric'} class:m-custom={onCards && (bg.material === 'custom' || bg.material === 'noise')} style:--cols={effectiveCols} style:--gap="max(0.2px, calc({gap} * var(--u)))"
     style:padding-top="{filterHeight + pixelGap + firstRow * rowStep}px" style:padding-bottom="calc(var(--botbar, 60px) + {pixelGap + (totalRows - lastRow) * rowStep}px)"
     style:transform="translate3d({drift.current.x * -8}px, {drift.current.y * -6}px, 0)">
     {#each visibleTiles as t, i (t.id)}
       {@render collectionCard(t, firstRow * effectiveCols + i)}
     {/each}
   </div>
+  {/if}
+  </div>
+  <!-- the plane's end rests halfway up the screen; looping, the scroll length has no reachable end -->
+  {#if flow}<div style:width="{viewportWidth + (looping ? SPAN : (rows - 1) * pitch)}px"></div>
+  {:else if tilt}<div style:height="{looping ? SPAN : jukebox ? (rows - 1) * pitch : Math.max(0, pixelGap + rows * pitch + BASE - viewportHeight / 2)}px"></div>{/if}
   {/if}
 </div>
 
@@ -333,6 +516,25 @@
         #fff0 780px, #ffffff0a 920px, #ffffff16 1030px, #ffffff0a 1140px, #fff0 1300px, #fff0 1400px);
   }
   .grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: var(--gap); padding: calc(var(--topbar, 52px) + var(--gap)) var(--gap) calc(var(--botbar, 60px) + var(--gap)); min-height: 100%; box-sizing: border-box; will-change: transform; }
+  .stage { display: contents; }
+  /* the tilted plane runs to both screen edges: no scrollbar or reserved gutter strips; the plane itself shows the motion */
+  .scroll.tilt { scrollbar-width: none; scrollbar-gutter: auto; }
+  .scroll.flow { overflow-x: auto; overflow-y: hidden; }
+  /* 3D stage: pinned to the viewport, rows darken toward the vanishing point. Perspective and tilt set the steepness;
+     the plane's horizon sits just above the top edge */
+  .stage.tilt { display: block; position: sticky; top: 0; left: 0; height: 100%; overflow: hidden; perspective: 100vh; }
+  /* ponytail: a screen-space shade, so it also darkens the background in the top corners the plane leaves bare */
+  .stage.tilt:not(.flow)::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, #000b 0, #0000 45%); }
+  .plane { position: absolute; top: 0; height: 0; will-change: transform; }
+  .band { position: absolute; left: 0; transform-origin: 0 0; will-change: transform; }
+  .cell { position: absolute; top: 0; }
+  /* the covers move under a resting pointer: an eased hover would redraw their row on every frame of every ease */
+  .plane .tile-info { transition: none; }
+  .disc { position: absolute; will-change: transform; }
+  .mirror { position: absolute; left: 0; top: calc(100% + 2px); width: 100%; height: 45%; overflow: hidden; pointer-events: none; }
+  .mirror img { display: block; width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; transform: scaleY(-1); }
+  .mirror::after { content: ''; position: absolute; inset: 0; background: linear-gradient(#000c, #000); }
+  .floor { position: absolute; inset: 0; z-index: -1000; pointer-events: none; background: linear-gradient(#0000 var(--from), #000 var(--to)); }
   /* custom: the imported image as authored, repeated at its own size or stretched to cover */
   .m-custom { background: var(--custom) center / auto repeat #000; }
   .fill .m-custom, .fill.m-custom { background-size: cover; background-repeat: no-repeat; }
