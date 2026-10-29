@@ -22,3 +22,6 @@ navidrome/data/
 # tagsmith dependencies and dry-run state
 tagsmith/node_modules/
 tagsmith/work/
+
+# what tagsmith test runs record about a real library: its paths and tags are never committed
+tagsmith/fixtures/local/

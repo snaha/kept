@@ -32,6 +32,8 @@ export type FileInfo = {
   duration: number;
   /** byte size of every embedded picture; a 0 is a broken frame that servers render as a missing image */
   pictures: number[];
+  /** the encoding, for grouping by quality; absent in inventories written before it was read */
+  audio?: { codec: string; bitrate: number; sampleRate: number; channels: number; lossless: boolean };
 };
 
 export type TagReader = (path: string) => Promise<FileInfo>;
@@ -41,7 +43,10 @@ export const emptyTags = (): Tags => Object.fromEntries(FIELDS.map((f) => [f, ''
 /** common keys the `Tags` fields are built from; everything else goes to `extra` */
 const MAPPED = new Set(['title', 'artist', 'album', 'albumartist', 'track', 'disk', 'year', 'genre', 'compilation', 'musicbrainz_recordingid', 'musicbrainz_albumid', 'musicbrainz_releasegroupid', 'picture']);
 
-const isBinary = (v: unknown): boolean =>
+/** ID3v2 involved-people roles and the common names music-metadata uses for them elsewhere */
+const INVOLVED: Record<string, string> = { 'DJ-mix': 'djmixer', mix: 'mixer', producer: 'producer', engineer: 'engineer', arranger: 'arranger' };
+
+const isBinary =(v: unknown): boolean =>
   v instanceof Uint8Array || (typeof v === 'object' && v !== null && Object.values(v as object).some((x) => x instanceof Uint8Array));
 
 /** RIFF INFO carries no encoding, so music-metadata reads a WAV's INFO text as Latin-1 and UTF-8 arrives as
@@ -65,6 +70,15 @@ export function fromMetadata(path: string, { common, format, native }: IAudioMet
     const kept = tags.filter((t) => !isBinary(t.value)).map(({ id, value }) => ({ id, value }));
     if (kept.length) raw[fmt] = kept;
   }
+  // music-metadata reads an ID3v2 involved-people list (TIPL, IPLS) as { role: names } but maps no role to a
+  // common name, so a DJ-mixer written by tagsmith or Picard would read back as missing
+  for (const t of Object.values(raw).flat()) {
+    if ((t.id !== 'TIPL' && t.id !== 'IPLS') || typeof t.value !== 'object' || !t.value) continue;
+    for (const [role, names] of Object.entries(t.value as Record<string, string[]>)) {
+      const key = INVOLVED[role];
+      if (key && extra[key] === undefined) extra[key] = names;
+    }
+  }
   return {
     path,
     tags: {
@@ -85,6 +99,13 @@ export function fromMetadata(path: string, { common, format, native }: IAudioMet
     raw,
     duration: Math.round(format.duration ?? 0),
     pictures: (common.picture ?? []).map((p) => p.data.length),
+    audio: {
+      codec: format.codec ?? '',
+      bitrate: Math.round(format.bitrate ?? 0),
+      sampleRate: format.sampleRate ?? 0,
+      channels: format.numberOfChannels ?? 0,
+      lossless: !!format.lossless,
+    },
   };
 }
 
