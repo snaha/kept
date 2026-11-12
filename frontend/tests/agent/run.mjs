@@ -266,13 +266,13 @@ try {
     run('click', button('Close settings'));
     assert(`!document.querySelector('.settings-dialog[open]') && document.activeElement.getAttribute('aria-label')==='Settings'`, 'X must close Settings and restore its visible trigger');
     run('click', button('Layout'));
-    run('click', '.controls button[aria-pressed]');
+    run('click', '.controls button:text-is("Advanced")');
     run('focus', '[aria-label="Album columns"] [role="slider"]');
     run('press', 'ArrowRight');
     assert(`document.querySelector('[aria-label="Album columns"] [role="slider"]').getAttribute('aria-valuenow')==='7'`, 'Advanced columns slider must answer keyboard input');
     run('press', 'ArrowLeft');
     capture(size, 'advanced-layout');
-    run('click', '.controls button[aria-pressed]');
+    run('click', '.controls button:text-is("Simple")');
     assert(`!document.querySelector('.side') && !document.querySelector('.component-panel')`, 'Toolbar modes must replace stacked display menus and the theme drawer');
     run('click', button('Background'));
     assert(`!!document.querySelector('[role="radiogroup"][aria-label="Background"]') && !document.querySelector('[aria-label="Advanced grid size"]')`, 'Background must replace the secondary layout controls');
@@ -412,8 +412,15 @@ try {
     run('press', 'Home');
     run('wait', '--fn', 'document.querySelector(`[aria-label="Previous album"]`).disabled');
     capture(size, 'cover-flow');
+    run('click', button('Glossy sleeves'));
+    assert(`document.querySelector('.flow-cover.glossy-sleeve') && getComputedStyle(document.querySelector('.flow-cover.glossy-sleeve'), '::after').pointerEvents === 'none' && window.__auditAudio[0].paused`, 'Gloss must decorate the sleeve without intercepting controls or changing playback');
+    capture(size, 'cover-flow-gloss');
     run('click', 'button:text-is("Grid")');
     assert(`Math.abs(document.querySelector('.scroll').scrollTop - ${gridScroll}) < 2`, 'Returning to Grid must restore its scroll position');
+    assert(`document.querySelector('.tile.glossy-sleeve')`, 'Gloss selection must carry across both library layouts');
+    capture(size, 'grid-gloss');
+    run('click', button('Glossy sleeves'));
+    assert(`!document.querySelector('.glossy-sleeve')`, 'Turning gloss off must restore plain artwork');
     results.push({ size, status: 'passed' });
     console.log(`${size}: passed`);
   }

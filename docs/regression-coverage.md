@@ -104,3 +104,9 @@ artifact paths. Pending native/audio/performance checks stay explicitly pending.
 
 - Component checks bound mounted artwork for 1,000 albums, distinguish selecting from opening/playing, exercise End-key navigation, and retain the centered album when a refresh inserts an item before it.
 - The four-size agent journey exercises Cover Flow navigation and returning to the grid's saved scroll position. Initial desktop and phone screenshots inspected; native touch momentum and physical-device 60 fps remain untested.
+
+### Sleeve finish and integrated core journey
+
+- The integrated journey passes at 1920×1080, 1440×900, 1024×768 and 390×844, including Cover Flow End/Home navigation, bounded covers, saved grid scroll, and gloss toggling across layouts without changing paused playback.
+- Inspected gloss screenshots at desktop/tablet/phone sizes and the grid at laptop size. The highlight stays inside artwork; long titles, direct actions and the bottom playback bar remain readable. These are reviewed implementation artifacts, not replacement approved references.
+- Physical touch, real-device frame pacing and audible-output checks remain separate release gaps.

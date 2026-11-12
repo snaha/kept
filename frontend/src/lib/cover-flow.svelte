@@ -3,9 +3,10 @@
   import type { Collection } from './music'
   import CollectionPlayback from './CollectionPlayback.svelte'
 
-  let { tiles, top, selectedId = $bindable(''), onopen, onplay }: {
+  let { tiles, top, gloss = false, selectedId = $bindable(''), onopen, onplay }: {
     tiles: Collection[]
     top: number
+    gloss?: boolean
     selectedId?: string
     onopen: (tile: Collection) => void
     onplay: (tile: Collection) => void
@@ -132,7 +133,7 @@
         {@const itemIndex = start + offset}
         {@const distance = itemIndex - position}
         {@const turn = Math.max(-1, Math.min(1, distance)) * -SIDE_TURN}
-        <button class="flow-cover" class:centered={itemIndex === index} data-collection-id={tile.id}
+        <button class="flow-cover" class:glossy-sleeve={gloss && !!tile.cover} class:centered={itemIndex === index} data-collection-id={tile.id}
           style:left="{width / 2 - coverSize / 2 + itemIndex * step}px"
           style:z-index={NEIGHBORS + 1 - Math.round(Math.abs(distance))}
           style:transform="perspective(1000px) rotateY({turn}deg) scale({1 - Math.min(1, Math.abs(distance)) * SIDE_SCALE})"
