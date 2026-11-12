@@ -284,3 +284,10 @@ Motion supports state feedback: shared control color changes settle in (120ms), 
 - **Don't** focus library Search underneath an open album view.
 - **Don't** promote fixture artwork colors or synthesized sidecar ramps into brand tokens.
 - **Don't** turn source gaps or untested native/live-provider behavior into certified design claims.
+
+Cover Flow is an optional Library layout, with native horizontal scrolling, a centered
+album title, direct Play and Details actions, and a position slider for large libraries.
+Only nearby covers mount; the selected cover requests larger artwork. Grid column and
+spacing preferences remain independent. Search remains a readable flat result list.
+Reduced motion removes the perspective transform. There is no endless loop or tilted
+wall; navigation has a clear beginning and end.
