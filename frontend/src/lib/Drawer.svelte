@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { restoreFocusOnClose } from './artwork-focus'
   import { player } from './player.svelte';
   import { keyboardScope } from './keyboard';
   import { onMount, type Snippet } from 'svelte';
@@ -9,14 +10,15 @@
   // 'right': slides in from the right and fills exactly the space between top bar, side panel and player bar
   let { from = 'bottom', onclose, children }: { from?: 'bottom' | 'right'; onclose: () => void; children: Snippet } = $props();
   let handle: HTMLButtonElement;
+  let panel: HTMLDivElement;
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
     handle.focus({ preventScroll: true });
-    return () => { if (previous?.isConnected && (document.activeElement === document.body || handle.closest('.panel')?.contains(document.activeElement))) previous.focus({ preventScroll: true }); };
+    return restoreFocusOnClose(panel, previous)
   });
 </script>
 
-<div role="region" aria-label="Details panel" use:keyboardScope={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); if (player.shortcutsOpen) player.shortcutsOpen = false; else onclose(); } }} class="panel" class:right={from === 'right'} in:reveal={from === 'right' ? { x: 32, duration: 260 } : { y: 24, duration: 260 }} out:reveal={from === 'right' ? { x: 16, duration: 140 } : { y: 12, duration: 140 }}>
+<div bind:this={panel} role="region" aria-label="Details panel" use:keyboardScope={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); if (player.shortcutsOpen) player.shortcutsOpen = false; else onclose(); } }} class="panel" class:right={from === 'right'} in:reveal={from === 'right' ? { x: 32, duration: 260 } : { y: 24, duration: 260 }} out:reveal={from === 'right' ? { x: 16, duration: 140 } : { y: 12, duration: 140 }}>
   <!-- the whole strip along the edge closes the drawer; the chevron sits centred in it -->
   <button bind:this={handle} class="handle" onclick={onclose} aria-label={from === 'right' ? 'Back' : 'Close'}><span>{from === 'right' ? '›' : '⌄'}</span></button>
   {@render children()}
@@ -27,7 +29,7 @@
     --s: clamp(0.85px, 100vw / 1600, 1.3px);
     /* covers the whole viewport underneath the bottom bar, so it sits on the dark panel with no seam */
     position: fixed; inset: 0; padding: 0 0 var(--botbar, 0px); box-sizing: border-box;
-    display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.85); color: #eee; z-index: 1;
+    display: flex; flex-direction: column; background: rgba(0, 0, 0, 0.85); color: #eee; z-index: 8; /* above the album view (7), under the bar */
   }
   /* right variant: the bottom layout rotated — chevron on the right edge, centred, pointing right */
   .panel:not(.right) { top: var(--browsebar, 0px); }
