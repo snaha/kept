@@ -18,6 +18,7 @@ import DigPanel from './DigPanel.svelte';
 import Queue from './Queue.svelte';
 import CollectionDetails from './CollectionDetails.svelte';
 import Settings from './Settings.svelte';
+import Bar from './Bar.svelte';
 import Grid from './Grid.svelte';
 import App from '../App.svelte';
 import ProfileSettings from './ProfileSettings.svelte';
@@ -418,6 +419,95 @@ describe('review regressions', () => {
     expect(onScreen).toContain(index(TestImage.started[6].src)); // the next warm is the nearest to the scroll position, not the next in library order
     await view.unmount(); await tick();
     expect(TestImage.started.slice(1).every(image => image.src === '')).toBe(true); // unmount releases the loads still in flight
+  });
+  it('opens the playing collection from the bar body and the expanded player from the Menu key', async () => {
+    const origin = { ...tile, id: 'local:album:bar', rawId: 'bar', title: 'Bar Album' };
+    render(Grid, { tiles: [origin], onpick: () => {}, hidden: false }); render(Bar, { hidden: false }); await tick();
+    const bar = () => document.querySelector<HTMLButtonElement>('.bar-toggle')!;
+    bar().click(); await tick();
+    expect(document.querySelector('.album-view')).toBeNull();
+    expect(player.queueOpen).toBe(true)
+    expect(bar().getAttribute('aria-label')).toBe('Open queue')
+    play([{ ...track, playbackOrigin: origin }]); await tick();
+    bar().click(); await tick();
+    expect(document.querySelector('.album-view')?.getAttribute('aria-label')).toBe('Bar Album details'); expect(document.querySelector('.now-playing')).toBeNull();
+    expect(bar().getAttribute('aria-expanded')).toBe('true');
+    bar().click(); await tick();
+    expect(document.querySelector('.album-view')).toBeNull();
+    document.querySelector<HTMLButtonElement>('.bar [aria-label="Queue and history"]')!.click(); await tick();
+    expect(document.querySelector('.now-playing')).not.toBeNull(); expect(document.querySelector('.album-view')).toBeNull();
+    bar().click(); await tick(); // the bar body swaps the expanded player for the album
+    expect(document.querySelector('.now-playing')).toBeNull(); expect(document.querySelector('.album-view')).not.toBeNull();
+    library.details = undefined; player.queueOpen = false;
+  });
+  it('isolates the album under Share and Visualizer and restores the album menu after Share closes', async () => {
+    session.admin = true
+    const onclose = vi.fn()
+    render(CollectionDetails, { tile, onclose })
+    render(Bar, { hidden: false })
+    await tick()
+    const menu = document.querySelector<HTMLButtonElement>('[aria-label="Album menu"]')!
+    menu.click()
+    await tick()
+    const share = [...document.querySelectorAll<HTMLButtonElement>('#album-actions button')].find(button => button.textContent === 'Share')!
+    share.click()
+    await tick()
+    expect(document.querySelector<HTMLElement>('.album-view')!.inert).toBe(true)
+    await vi.waitFor(() => expect(document.activeElement?.closest('.panel')).toBeTruthy())
+    document.querySelector<HTMLButtonElement>('.panel .handle')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.panel')).toBeNull())
+    await vi.waitFor(() => expect(document.activeElement).toBe(menu))
+    expect(document.querySelector<HTMLElement>('.album-view')!.inert).toBe(false)
+    menu.click()
+    await tick()
+    const visualizer = [...document.querySelectorAll<HTMLButtonElement>('#album-actions button')].find(button => button.textContent === 'Visualizer')!
+    visualizer.click()
+    await tick()
+    expect(document.querySelector<HTMLElement>('.album-view')!.inert).toBe(true)
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    menu.dispatchEvent(escape)
+    expect(onclose).not.toHaveBeenCalled()
+    expect(escape.defaultPrevented).toBe(false)
+    player.visOpen = false
+    session.admin = false
+  })
+  it('opens a searched track album outside the current library mode and keeps direct favorite and Add actions', async () => {
+    library.mode = 'playlists'
+    const playlist = { ...tile, id: 'local:playlist:list', rawId: 'list', kind: 'playlist' as const }
+    library.tiles = [playlist]
+    render(Grid, { tiles: [playlist], onpick: () => {}, hidden: false })
+    render(Bar, { hidden: false })
+    play([{ ...track, albumId: 'local:album:searched', album: 'Searched album' }])
+    await pause()
+    library.details = playlist
+    await tick()
+    document.querySelector<HTMLButtonElement>('.bar-toggle')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.album-view h1')?.textContent).toBe('Searched album'))
+    await vi.waitFor(() => expect(document.querySelector('.album-view .track-add')).toBeTruthy())
+    const favorite = document.querySelector<HTMLButtonElement>('.album-view [aria-label="Add to favorites"]')!
+    favorite.click()
+    await tick()
+    expect(document.querySelector('.album-view [aria-label="Remove from favorites"]')?.getAttribute('aria-pressed')).toBe('true')
+    document.querySelector<HTMLButtonElement>('.album-view .track-add')!.click()
+    await tick()
+    expect(player.queue).toHaveLength(2)
+    expect(player.playing).toBe(false)
+    library.details = undefined
+    library.mode = 'albums'
+  })
+  it('moves the album title into the top row once the heading scrolls away, and counts hours', async () => {
+    session.api = api({ getAlbum: vi.fn(async () => ok({ album: { song: Array.from({ length: 40 }, (_, i) => child(`song-${i}`, `Song ${i}`)) } })) });
+    render(CollectionDetails, { tile: { ...tile, title: 'Long Album' }, onclose: () => {} }); await tick();
+    await vi.waitFor(() => expect(document.querySelectorAll('.album-view .track-row').length).toBe(40));
+    expect(document.querySelector('.album-count')?.textContent).toContain('40 songs • 2 hr 0 min');
+    expect(document.querySelector('.compact-title')).toBeNull();
+    // the list scrolls on desktop and the whole view on phone; the test viewport may be either
+    const content = [...document.querySelectorAll<HTMLElement>('.album-view, .album-content')].find(element => element.scrollHeight > element.clientHeight)!;
+    content.scrollTop = 600; content.dispatchEvent(new Event('scroll')); await tick();
+    expect(content.scrollTop).toBeGreaterThan(0);
+    expect(document.querySelector('.compact-title')?.textContent).toBe('Long Album');
+    content.scrollTop = 0; content.dispatchEvent(new Event('scroll')); await tick();
+    await vi.waitFor(() => expect(document.querySelector('.compact-title')).toBeNull()); // it drops back out of the row
   });
   it('lets the real Settings modal own focus above Queue and restores the queue control', async () => {
     play([track]);

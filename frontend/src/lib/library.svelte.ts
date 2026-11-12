@@ -17,6 +17,8 @@ class LibraryState {
   error = $state('');
   source = $state<'all' | 'local'>('all');
   scan = $state({ scanning: false, count: 0, checked: false, error: '', pending: false, startError: '' });
+  details = $state.raw<Tile | undefined>(undefined)
+
 }
 export const library = new LibraryState();
 let localTiles: Tile[] = [], req = 0, pickRequest = 0, listing = true;
