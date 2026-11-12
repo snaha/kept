@@ -2,6 +2,7 @@ import http from 'node:http';
 import { readFile, stat, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { attachControl } from '../../../desktop/control-relay.js';
 import { MusicDatabase } from '../../../desktop/music-database.js';
 const historyDirectory = await mkdtemp(path.join(os.tmpdir(), 'music-audit-'));
 const history = new MusicDatabase(path.join(historyDirectory, 'music.sqlite'));
@@ -14,7 +15,8 @@ let revision = 0;
 const sampleRate = 8000, byteLength = sampleRate * 180 * 2;
 const wav = Buffer.alloc(44 + byteLength);
 wav.write('RIFF', 0); wav.writeUInt32LE(36 + byteLength, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(sampleRate, 24); wav.writeUInt32LE(sampleRate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(byteLength, 40);
-const injection = `<script>(${bootstrap.toString()})();</script>`;
+const controlAudit = process.env.MUSIC_AUDIT_CONTROL === '1';
+const injection = `<script>(${bootstrap.toString()})(${controlAudit});</script>`;
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (url.pathname.startsWith('/audit-history/') && req.method === 'POST') {
@@ -67,7 +69,8 @@ const server = http.createServer(async (req, res) => {
     res.end(file.endsWith('index.html') ? data.toString().replace('<head>', `<head>${injection}`) : data);
   } catch { res.writeHead(404).end('Not found; build the frontend first.'); }
 });
+const controlRelay = controlAudit ? attachControl(server, { sharePassword: 'share-test-only', hostPassword: 'test-only' }) : undefined;
 server.listen(port, '127.0.0.1', () => console.log(`Music regression fixture: http://127.0.0.1:${port} (synthetic local library, real silent WAV playback)`));
-const stop = () => server.close(async () => { await history.close(); await rm(historyDirectory, { recursive: true, force: true }); });
+const stop = () => { controlRelay?.close(); server.close(async () => { await history.close(); await rm(historyDirectory, { recursive: true, force: true }); }); };
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);

@@ -80,3 +80,20 @@ Svelte/Vite plugin for catalog generations, operation ownership, duplicate queue
 identity/focus, browser capability fallbacks, revisions, storage and runtime teardown.
 Its Playwright browser provider supplies Chromium; it does not replace this
 agent-driven application audit with Playwright end-to-end specifications.
+
+## Phone control (isolated two-browser journey)
+
+In the phone-control branch, start the same synthetic library with its real WebSocket relay:
+
+```sh
+MUSIC_AUDIT_PORT=4179 MUSIC_AUDIT_CONTROL=1 pnpm --dir frontend audit:serve
+node frontend/tests/agent/run-control.mjs
+```
+
+The journey owns two named browser sessions, drives Computer playback from the phone,
+checks queue selection and seek, switches playback destinations, and verifies visible
+disconnection feedback. The phone must never call `Audio.play()` while controlling the
+computer. It captures the queue at all four standard sizes and closes both sessions.
+The fixture's credentials and silent WAV streams are synthetic; no real library is used.
+This establishes browser/relay behavior, not physical LAN, mobile OS lock-screen controls,
+or audible output. Stop the fixture server after the run.

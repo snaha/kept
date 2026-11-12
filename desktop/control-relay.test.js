@@ -29,10 +29,14 @@ test('control relay authenticates both roles, replays the last state and forward
   assert.deepEqual(await phone.next(), { type: 'host', connected: false, state: null }, 'a phone learns there is no host yet');
 
   const host = await open(`${base}?h=admin-secret`);
-  assert.deepEqual(await phone.next(), { type: 'host', connected: true, state: null }, 'phones hear the host arrive');
-  const state = { playing: true, song: { id: 'local:track:1', title: 'Song' }, time: 3 };
+  assert.deepEqual(await phone.next(), { type: 'host', connected: true }, 'phones hear the host arrive');
+  const state = { playing: true, queue: [{ id: 'local:track:1', title: 'Song', queueEntryId: 'first' }], time: 3 };
   host.send(JSON.stringify({ type: 'state', state }));
   assert.deepEqual(await phone.next(), { type: 'state', state }, 'host state reaches the phone');
+
+  host.send(JSON.stringify({ type: 'state', state: { time: 4 } }))
+  assert.deepEqual(await phone.next(), { type: 'state', state: { time: 4 } })
+  state.time = 4
 
   const late = await open(`${base}?p=share-secret`);
   assert.deepEqual(await late.next(), { type: 'host', connected: true, state }, 'a phone that connects later gets the last state');

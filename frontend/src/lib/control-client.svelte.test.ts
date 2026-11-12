@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tick } from 'svelte';
 import { render, cleanup } from 'vitest-browser-svelte';
 import { session } from './api.svelte';
-import { player, disposePlayback, toggle, setVolume, enqueue, remote } from './player.svelte';
-import { pick, addCollection, type Tile } from './library.svelte';
+import { player, disposePlayback, toggle, setVolume, enqueue, remote, seek, setOrder, jumpRandom, jump, moveQueue, removeQueue, pause } from './player.svelte';
+import { pick, addCollection, gridFor, type Tile } from './library.svelte';
 import { control, rememberShare, startControlClient } from './control-client.svelte';
 import { writePreference } from './preferences';
 import ControlSwitch from './ControlSwitch.svelte';
@@ -41,7 +41,7 @@ describe('phone control', () => {
     expect(socket.url).toBe(`ws://${location.host}/control?p=share-secret`);
     expect(document.body.textContent).toContain('connecting');
     socket.open(); await tick();
-    socket.receive({ type: 'host', connected: true, state: { song: { id: 'local:track:far', rawId: 'far', title: 'Far away', coverId: 'c1', albumId: 'local:album:a', duration: 200 }, playing: true, pending: false, time: 42, duration: 200, volume: 70, index: 0, queueLength: 3 } });
+    socket.receive({ type: 'host', connected: true, state: { queue: [0, 1].map(index => ({ ...track, id: 'local:track:far', rawId: 'far', title: 'Far away', coverId: 'c1', albumId: 'local:album:a', duration: 200, queueEntryId: `entry-${index}`, playbackOriginIndex: index })), playing: true, pending: false, time: 42, duration: 200, volume: 70, index: 1, queueLength: 2, order: 'normal', error: '', loadingCollectionId: '' } });
     await tick();
     expect(player.song?.title).toBe('Far away'); expect(player.playing).toBe(true); expect(player.time).toBe(42); expect(player.volume).toBe(70);
     expect(player.song?.cover).toContain('http://10.0.0.2:4533/rest/getCoverArt?id=c1');
@@ -49,17 +49,39 @@ describe('phone control', () => {
 
     void pick(tile); void addCollection(tile); enqueue([track]); void toggle(); setVolume(30);
     expect(names(socket)).toEqual(['play', 'add', 'queue', 'toggle', 'volume']);
-    expect(player.queue.length).toBe(1); // nothing was queued or fetched here
+    expect(player.queue.length).toBe(2)
+    expect(player.index).toBe(1)
+    expect(player.song?.playbackOriginIndex).toBe(1)
+    const queue = player.queue
+    socket.receive({ type: 'state', state: { playing: true, pending: false, time: 43, duration: 200, volume: 30, index: 1, queueLength: 2, order: 'normal', error: '', loadingCollectionId: '' } })
+    expect(player.queue).toBe(queue)
+    void seek(0.5)
+    setOrder('shuffle', () => gridFor([tile]))
+    jumpRandom(() => gridFor([tile]))
+    jump(0)
+    moveQueue(0, 1)
+    removeQueue(0)
+    void pause()
+    expect(names(socket).slice(5)).toEqual(['seek', 'order', 'random', 'jump', 'move', 'remove', 'pause'])
+    expect(socket.sent.at(-3)).toMatchObject({ name: 'move', entryId: 'entry-0', targetId: 'entry-1' })
+    expect(socket.sent.at(-5)).toMatchObject({ name: 'random', collections: [tile] })
+    expect(player.queue).toBe(queue)
+    expect(player.index).toBe(1)
 
     socket.receive({ type: 'host', connected: false, state: null }); await tick();
-    expect(player.song).toBeUndefined(); expect(player.playing).toBe(false);
-    expect(document.body.textContent).toContain('not playing');
+    expect(player.song?.title).toBe('Far away'); expect(player.playing).toBe(false);
+    expect(document.body.textContent).toContain('Computer disconnected');
+    void toggle()
+    expect(player.error).toContain('disconnected')
+    const sent = socket.sent.length
 
     document.querySelector<HTMLButtonElement>('[role=radio][aria-checked=false]')!.click(); await tick();
     expect(control.mode).toBe('library'); expect(socket.readyState).toBe(WebSocket.CLOSED);
     enqueue([track]);
     expect(player.queue.map(t => t.id)).toEqual([track.id]); // plays here again
-    expect(names(socket)).toEqual(['play', 'add', 'queue', 'toggle', 'volume']);
+    expect(socket.sent.length).toBe(sent)
+    socket.receive({ type: 'state', state: { index: 999 } })
+    expect(player.index).toBe(-1)
     stop();
   });
 });

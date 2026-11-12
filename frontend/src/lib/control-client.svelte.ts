@@ -1,70 +1,126 @@
-import { untrack } from 'svelte';
-import { readJsonPreference, writePreference } from './preferences';
-import { coverUrl } from './api.svelte';
-import { pause, player, remote } from './player.svelte';
-import type { ControlState } from './control-host.svelte';
-import type { ShareMode } from './sharing.svelte';
+import { untrack } from 'svelte'
+import { readJsonPreference, writePreference } from './preferences'
+import { coverUrl, session } from './api.svelte'
+import { disposePlayback, player, remote } from './player.svelte'
+import type { ControlCommand, ControlState } from './control-host.svelte'
+import type { ShareMode } from './sharing.svelte'
 
-// A phone that opened a share link. In Control mode it drives the player of the computer that shared the link over
-// the control socket on the page's own host; in Library mode it plays here. Nothing is shared with the computer's
-// history: what plays there is its own listening
-export const control = $state<{ mode: '' | ShareMode; connected: boolean; host: boolean }>({ mode: '', connected: false, host: false });
-const KEY = 'share.phone';
-const RETRY_MS = 3000;
-type Remembered = { mode: ShareMode; password: string };
+export const control = $state<{ mode: '' | ShareMode; connected: boolean; host: boolean }>({ mode: '', connected: false, host: false })
+const KEY = 'share.phone'
+const RETRY_MS = 3000
+type Remembered = { mode: ShareMode; password: string }
 
 export function rememberShare(mode: ShareMode, password: string) {
-  writePreference(KEY, JSON.stringify({ mode, password } satisfies Remembered));
-  control.mode = mode;
+  writePreference(KEY, JSON.stringify({ mode, password } satisfies Remembered))
+  control.mode = mode
 }
 export function setShareMode(mode: ShareMode) {
-  const saved = readJsonPreference<Remembered | null>(KEY, null);
-  if (saved) rememberShare(mode, saved.password);
+  const saved = readJsonPreference<Remembered | undefined>(KEY, undefined)
+  if (saved) rememberShare(mode, saved.password)
 }
-
-function applyState(state: ControlState | null | undefined) {
-  const s = state?.song;
-  player.queue = s ? [{ id: s.id, rawId: s.rawId, source: 'local', title: s.title, artist: s.artist, album: s.album, albumId: s.albumId, coverId: s.coverId,
-    cover: coverUrl(s.coverId), duration: s.duration, available: true, playbackOrigin: s.origin }] : [];
-  player.index = s ? 0 : -1;
-  player.playing = !!state?.playing; player.pending = !!state?.pending;
-  player.time = state?.time ?? 0; player.duration = state?.duration ?? 0;
-  if (state) player.volume = state.volume;
+function resetPlayer() {
+  player.queue = []
+  player.index = -1
+  player.playing = false
+  player.pending = false
+  player.suspended = false
+  player.order = 'normal'
+  player.error = ''
+  player.time = 0
+  player.duration = 0
+  player.loadingCollectionId = ''
 }
-
+function applyState(state: ControlState) {
+  if (state.queue) {
+    player.queue = state.queue.map(({ origin, ...track }) => ({
+      ...track, cover: coverUrl(track.coverId),
+      playbackOrigin: origin ? { ...origin, cover: coverUrl(origin.coverId) } : undefined,
+    }))
+  }
+  player.index = state.index
+  player.playing = state.playing
+  player.pending = state.pending
+  player.suspended = false
+  player.time = state.time
+  player.duration = state.duration
+  player.volume = state.volume
+  player.order = state.order
+  player.error = state.error
+  player.loadingCollectionId = state.loadingCollectionId
+}
 export function startControlClient(socket: (url: string) => WebSocket = url => new WebSocket(url)) {
-  if (window.desktop) return () => {}; // the app window is the host, never a phone
-  const saved = readJsonPreference<Remembered | null>(KEY, null);
-  if (saved?.mode) control.mode = saved.mode;
-  let ws: WebSocket | undefined, retry: ReturnType<typeof setTimeout> | undefined;
-  const send = (command: object) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(command)); };
+  if (window.desktop) return () => {}
+  const saved = readJsonPreference<Remembered | undefined>(KEY, undefined)
+  if (saved?.mode) control.mode = saved.mode
+  let ws: WebSocket | undefined
+  let retry: ReturnType<typeof setTimeout> | undefined
+  const unavailable = () => {
+    control.connected = false
+    control.host = false
+    player.playing = false
+    player.pending = false
+    player.loadingCollectionId = ''
+  }
+  const send = (command: ControlCommand) => {
+    if (ws?.readyState !== WebSocket.OPEN || !control.host) {
+      player.error = 'The computer is disconnected. Reconnect before changing playback.'
+      return
+    }
+    player.error = ''
+    ws.send(JSON.stringify(command))
+  }
   const leave = () => {
-    clearTimeout(retry); retry = undefined; ws?.close(); ws = undefined;
-    control.connected = false; control.host = false;
-  };
+    clearTimeout(retry)
+    retry = undefined
+    const old = ws
+    ws = undefined
+    old?.close()
+    unavailable()
+  }
   const connect = () => {
-    const password = readJsonPreference<Remembered | null>(KEY, null)?.password;
-    if (!password) return;
-    const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-    const mine = socket(`${protocol}://${location.host}/control?p=${encodeURIComponent(password)}`); ws = mine;
-    mine.onopen = () => { if (ws === mine) control.connected = true; };
+    const password = readJsonPreference<Remembered | undefined>(KEY, undefined)?.password
+    if (!password) return
+    const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
+    const mine = socket(`${protocol}://${location.host}/control?p=${encodeURIComponent(password)}`)
+    ws = mine
+    mine.onopen = () => { if (ws === mine) control.connected = true }
     mine.onmessage = event => {
-      if (ws !== mine) return;
-      let m: { type: string; connected?: boolean; state?: ControlState | null };
-      try { m = JSON.parse(String(event.data)); } catch { return; }
-      if (m.type === 'host') { control.host = !!m.connected; applyState(m.state); }
-      else if (m.type === 'state') applyState(m.state);
-    };
-    mine.onclose = () => { if (ws !== mine) return; ws = undefined; control.connected = false; control.host = false; retry = setTimeout(connect, RETRY_MS); };
-  };
-  let active = false;
+      if (ws !== mine) return
+      let message: { type: string; connected?: boolean; state?: ControlState }
+      try { message = JSON.parse(String(event.data)) } catch { return }
+      if (message.type === 'host') {
+        control.host = !!message.connected
+        if (message.state) applyState(message.state)
+        else { player.playing = false; player.pending = false }
+      } else if (message.type === 'state' && message.state) {
+        control.host = true
+        applyState(message.state)
+      }
+    }
+    mine.onclose = () => {
+      if (ws !== mine) return
+      ws = undefined
+      unavailable()
+      retry = setTimeout(connect, RETRY_MS)
+    }
+  }
   const stop = $effect.root(() => {
     $effect(() => {
-      if (control.mode !== 'control') return;
-      active = true; remote.send = send;
-      untrack(() => { void pause(); applyState(null); connect(); }); // whatever played here stops; the computer's state takes the bar over
-      return () => { if (!active) return; active = false; delete remote.send; leave(); untrack(() => applyState(null)); };
-    });
-  });
-  return stop;
+      if (control.mode !== 'control' || !session.api) return
+      untrack(() => {
+        // Invalidate local async work and release its media resources before remote state takes ownership.
+        disposePlayback()
+        player.visOpen = false
+        resetPlayer()
+        remote.send = send
+        connect()
+      })
+      return () => {
+        delete remote.send
+        leave()
+        untrack(resetPlayer)
+      }
+    })
+  })
+  return stop
 }

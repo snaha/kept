@@ -40,6 +40,10 @@
     aside, .artwork-list { overflow: visible; scrollbar-gutter: auto; }
     aside { margin-bottom: 28px; }
     aside :global(.detail-cover) { width: 100%; max-width: 360px; }
+    .remote-player aside { flex-direction: row; gap: 16px; align-items: center; margin-bottom: 16px; }
+    .remote-player aside :global(.detail-cover) { width: 80px; }
+    .remote-player aside :global(.detail-art-meta) { width: auto; flex: 1; min-width: 0; text-align: left; }
+    .remote-player aside :global(.detail-art-meta p) { margin: 0; }
     .artwork-view :global(.detail-icon) { min-height: 44px; min-width: 44px; }
   }
   @media (prefers-reduced-motion: reduce) { .artwork-view { transition: none; } }

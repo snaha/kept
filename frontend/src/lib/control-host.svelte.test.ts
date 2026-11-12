@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import { session } from './api.svelte';
 import { player, disposePlayback } from './player.svelte';
 import { desktop } from './desktop.svelte';
-import { startControlHost } from './control-host.svelte';
+import { startControlHost, applyCommand } from './control-host.svelte';
 import type { Track } from './music';
 
 const track: Track = { id: 'local:track:one', rawId: 'one', source: 'local', title: 'Song', cover: '', available: true, duration: 180 };
@@ -24,7 +24,7 @@ const ready = (webPort: number) => ({ phase: 'ready', error: '', onboarding: fal
 beforeEach(() => {
   vi.stubGlobal('desktop', { status: vi.fn(async () => ready(4000)), onChange: () => () => {} });
   session.api = {} as never; FakeSocket.all = [];
-  player.queue = []; player.index = -1; player.volume = 100;
+  player.queue = []; player.index = -1; player.volume = 100; player.time = 0;
 });
 afterEach(() => { disposePlayback(); desktop.status = null; vi.unstubAllGlobals(); });
 
@@ -47,6 +47,16 @@ describe('control host', () => {
     socket.receive({ type: 'state', state: { volume: 5 } });
     expect(player.queue.length).toBe(1); expect(player.volume).toBe(40);
 
+    await tick()
+    const published = socket.sent.length
+    player.time = 0.1; await tick()
+    player.time = 0.9; await tick()
+    expect(socket.sent.length).toBe(published)
+    player.time = 1.1; await tick()
+    expect(socket.sent.length).toBe(published + 1)
+    expect(socket.sent.at(-1)).toMatchObject({ state: { time: 1 } })
+    expect((socket.sent.at(-1) as { state: { queue?: unknown } }).state.queue).toBeUndefined()
+
     desktop.status = ready(4100); await tick(); // a restart on another port reconnects there
     expect(socket.readyState).toBe(WebSocket.CLOSED);
     expect(FakeSocket.all.at(-1)!.url).toBe('ws://127.0.0.1:4100/control?h=admin-secret');
@@ -55,4 +65,21 @@ describe('control host', () => {
     expect(FakeSocket.all.length).toBe(2);
     stop();
   });
+  it('addresses duplicate queue occurrences by identity and ignores stale queue edits', () => {
+    player.queue = [
+      { ...track, queueEntryId: 'first' },
+      { ...track, queueEntryId: 'second' },
+      { ...track, id: 'other', queueEntryId: 'third' },
+    ]
+    player.index = 1
+    applyCommand({ type: 'command', name: 'move', entryId: 'first', targetId: 'third' })
+    expect(player.queue.map(track => track.queueEntryId)).toEqual(['second', 'third', 'first'])
+    expect(player.song?.queueEntryId).toBe('second')
+    applyCommand({ type: 'command', name: 'remove', entryId: 'third' })
+    applyCommand({ type: 'command', name: 'remove', entryId: 'third' })
+    applyCommand({ type: 'command', name: 'move', entryId: 'first', targetId: 'gone' })
+    expect(player.queue.map(track => track.queueEntryId)).toEqual(['second', 'first'])
+    expect(player.song?.queueEntryId).toBe('second')
+  })
+
 });

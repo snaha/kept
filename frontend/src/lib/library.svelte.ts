@@ -174,11 +174,13 @@ export function addCollection(t: Tile) {
 }
 export function disposeLibrary() { req++; pickRequest++; }
 
-export function grid(): Grid {
-  const tiles = browseCollections(library.tiles).filter((t) => t.available), cum = new Float64Array(tiles.length + 1);
+export function grid(): Grid { return gridFor(browseCollections(library.tiles)) }
+export function gridFor(collections: Collection[]): Grid {
+  const tiles = collections.filter(tile => tile.available)
+  const cum = new Float64Array(tiles.length + 1)
   tiles.forEach((t, i) => (cum[i + 1] = cum[i] + Math.max(1, t.count)));
   return {
-    count: cum[tiles.length], key: tiles.map((t) => t.id).join(),
+    collections: tiles, count: cum[tiles.length], key: tiles.map((t) => t.id).join(),
     find: (albumId) => { const i = tiles.findIndex((t) => t.kind === 'album' && t.id === albumId); return i < 0 ? -1 : cum[i]; },
     async song(n) {
       let lo = 0, hi = tiles.length - 1;
