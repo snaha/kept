@@ -400,6 +400,20 @@ try {
     run('click', '#playback-options button[aria-label="Show in library"]');
     run('wait', '--fn', '!document.querySelector(".now-playing") && !!document.activeElement?.getAttribute("data-collection-id")');
     assert(`(() => { const r = document.activeElement.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })()`, 'Show in library must reveal and focus the playing album');
+    run('mouse', 'move', String(width / 2), '4');
+    run('click', button('Layout'));
+    const gridScroll = evaluate('document.querySelector(".scroll").scrollTop').trim();
+    run('click', 'button:text-is("Cover Flow")');
+    run('wait', '--fn', '!!document.querySelector(".flow-cover[aria-current=true]")');
+    run('focus', '.flow-cover[aria-current="true"]');
+    run('press', 'End');
+    run('wait', '--fn', 'document.querySelector(`[aria-label="Next album"]`).disabled');
+    assert(`document.querySelectorAll('.flow-cover').length <= 9 && window.__auditAudio[0].paused`, 'Cover Flow must mount only nearby covers and leave playback alone');
+    run('press', 'Home');
+    run('wait', '--fn', 'document.querySelector(`[aria-label="Previous album"]`).disabled');
+    capture(size, 'cover-flow');
+    run('click', 'button:text-is("Grid")');
+    assert(`Math.abs(document.querySelector('.scroll').scrollTop - ${gridScroll}) < 2`, 'Returning to Grid must restore its scroll position');
     results.push({ size, status: 'passed' });
     console.log(`${size}: passed`);
   }

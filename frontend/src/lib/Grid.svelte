@@ -19,6 +19,7 @@
   import { catalogSearch, startCatalogSearch, captureCatalogSearch, restoreCatalogSearch } from './catalog-search.svelte';
   import { player, collectionPlayback } from './player.svelte';
   import CollectionPlayback from './CollectionPlayback.svelte';
+  import CoverFlow from './cover-flow.svelte'
   import DigPanel from './DigPanel.svelte';
   import { catalog, dig, digActive, digScore, resetDig, metadata, warmColors, coverRevision } from './discovery.svelte';
   import CollectionDetails from './CollectionDetails.svelte';
@@ -35,6 +36,19 @@
   }
   let cols = $state(savedNumber('grid.cols', 6, 1, 10));
   let advancedLayout = $state(false);
+  let browseLayout = $state(readPreference('library.layout') === 'flow' ? 'flow' : 'grid')
+  let flowId = $state('')
+  let coverFlow = $state<CoverFlow>()
+  let gridTop = 0
+  async function changeLayout(next: string) {
+    cancelReveal()
+    if (next === browseLayout) return
+    if (browseLayout === 'grid') gridTop = scroller.scrollTop
+    browseLayout = next
+    writePreference('library.layout', next)
+    await tick()
+    scroller.scrollTo({ top: next === 'grid' ? gridTop : 0, behavior: 'instant' })
+  }
   function resizeGrid(value: number) { cols = 11 - value; gap = Math.round(24 + cols * 8); }
   let gap = $state(savedNumber('grid.gap', 48, 0, 160));
   let coversOnly = $state(readPreference('covers.only') === '1'); // off by default
@@ -84,6 +98,7 @@
     const tile = candidates[Math.floor(Math.random() * candidates.length)];
     discoveryId = tile.id;
     const index = shown.findIndex(t => t.id === tile.id);
+    if (browseLayout === 'flow') { coverFlow?.reveal(tile.id); return }
     scroller?.scrollTo({ top: Math.floor(index / effectiveCols) * rowStep, behavior: 'instant' });
   }
   let filterHeight = $state(110);
@@ -149,7 +164,7 @@
     queue = tiles.flatMap((t, i) => t.cover && !warmed.has(t.cover) ? [{ i, u: t.cover }] : []);
     while (workers < WARM_PARALLEL && queue.length) { workers++; void warmer(); }
   }
-  $effect(() => { const tiles = shown; untrack(() => warmCovers(tiles)); });
+  $effect(() => { const tiles = browseLayout === 'grid' ? shown : []; untrack(() => warmCovers(tiles)); });
   onDestroy(() => { disposed = true; queue = []; for (const i of loading.values()) i.src = ''; loading.clear(); });
 
   type BrowseSnapshot = {
@@ -165,6 +180,7 @@
     dig: typeof dig
     search: ReturnType<typeof captureCatalogSearch>
     searchKind: string
+    flowId: string
   }
   let previousBrowse = $state<BrowseSnapshot>()
   let revealMessage = $state('')
@@ -182,6 +198,7 @@
     wantedAlbum = ''
     navigationFrame = requestAnimationFrame(() => {
       if (mine !== navigationGeneration || activeId !== id) return
+      if (browseLayout === 'flow' && coverFlow?.reveal(id)) return
       scroller.scrollTo({ top: Math.max(0, filterHeight + pixelGap + Math.floor(index / effectiveCols) * rowStep + rowStep / 2 - viewportHeight / 2), behavior: 'instant' })
       scrollTop = scroller.scrollTop
       navigationFrame = requestAnimationFrame(() => {
@@ -202,7 +219,7 @@
       previousBrowse ??= {
         mode: library.mode, source: library.source, query, artist: artistFilter,
         show: showFilter, favorites: favoritesOnly, covers: coversOnly, sort,
-        top: scroller.scrollTop, dig: { ...dig }, search: captureCatalogSearch(), searchKind,
+        top: scroller.scrollTop, dig: { ...dig }, search: captureCatalogSearch(), searchKind, flowId,
       }
       query = ''
       artistFilter = ''
@@ -228,6 +245,7 @@
     if (mine !== navigationGeneration) return
     query = saved.query
     searchKind = saved.searchKind
+    flowId = saved.flowId
     restoreCatalogSearch(saved.search)
     artistFilter = saved.artist
     showFilter = saved.show
@@ -332,7 +350,7 @@
     <button class="sort-direction icon-button" aria-label="Reverse sort order" aria-pressed={sortDirection === -1} disabled={sort === 'random'} title="Reverse sort order" onclick={() => { sortDirection *= -1; applySort(); }}><Icon name="sort" /></button>
     {/if}
     </div>
-    <label class="inline-size"><Icon name="display" /><Slider type="single" min={1} max={10} step={1} value={11 - cols} onValueChange={resizeGrid} aria-label="Grid size" /></label>
+    {#if browseLayout === 'grid'}<label class="inline-size"><Icon name="display" /><Slider type="single" min={1} max={10} step={1} value={11 - cols} onValueChange={resizeGrid} aria-label="Grid size" /></label>{/if}
     <div class="bar-modes" class:expanded={toolbar.selecting}>
       <button class="icon-button" aria-label="Choose toolbar mode" aria-expanded={toolbar.selecting} aria-controls="toolbar-mode-options" title="Display options" onclick={() => (toolbar.selecting = !toolbar.selecting)}><Icon name="filter" /></button>
       <div class="mode-options" id="toolbar-mode-options" use:keyboardScope={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeModes(); } }} inert={!toolbar.selecting}>
@@ -354,9 +372,12 @@
       </div>
     {:else if toolbar.mode === 'layout'}
       <div class="controls">
+        <div class="group" aria-label="Library view"><button aria-pressed={browseLayout === 'grid'} onclick={() => void changeLayout('grid')}>Grid</button><button aria-pressed={browseLayout === 'flow'} onclick={() => void changeLayout('flow')}>Cover Flow</button></div>
+        {#if browseLayout === 'grid'}
         {#if advancedLayout}<label class="slider-control"><span>Columns</span><Slider type="single" min={1} max={10} step={1} value={cols} onValueChange={value => (cols = value)} aria-label="Album columns" /><output>{cols}</output></label><label class="slider-control"><span>Gap</span><Slider type="single" min={0} max={160} step={1} value={gap} onValueChange={value => (gap = value)} aria-label="Album spacing" /><output>{gap}</output></label>
         {:else}<label class="slider-control"><span>Grid size</span><Slider type="single" min={1} max={10} step={1} value={11 - cols} onValueChange={resizeGrid} aria-label="Advanced grid size" /><output>{effectiveCols} across</output></label>{/if}
         <Button variant="outline" size="sm" aria-pressed={advancedLayout} onclick={() => (advancedLayout = !advancedLayout)}>{advancedLayout ? 'Simple' : 'Advanced'}</Button>
+        {/if}
       </div>
     {:else if toolbar.mode === 'look'}
       <div class="controls"><span class="group" role="radiogroup" aria-label="Background">{#each Object.entries(MATERIALS) as [key, label] (key)}<button class="opt" class:on={bg.material === key} role="radio" aria-checked={bg.material === key} disabled={key === 'custom' && !bg.custom} onclick={() => (bg.material = key as keyof typeof MATERIALS)}>{label}</button>{/each}<button class="opt" onclick={randomBackground}>Random</button></span></div>
@@ -407,6 +428,8 @@
     <CatalogSearch bind:kind={searchKind} top={filterHeight} cols={effectiveCols} gap={pixelGap} card={collectionCard}
       onclear={() => { query = ''; filterChanged(); }}
       onartist={artist => { query = ''; filterChanged(); onpick(artist); }} />
+  {:else if browseLayout === 'flow'}
+    <CoverFlow bind:this={coverFlow} tiles={shown} top={filterHeight} bind:selectedId={flowId} onplay={pick} onopen={tile => { cancelReveal(); library.details = tile; player.queueOpen = false; player.view = '' }} />
   {:else}
   <div class="grid" class:m-vinyl={bg.scroll && bg.material === 'vinyl'} class:m-grille={bg.scroll && bg.material === 'grille'}
     class:m-fabric={bg.scroll && bg.material === 'fabric'} class:m-custom={bg.scroll && (bg.material === 'custom' || bg.material === 'noise')} style:--cols={effectiveCols} style:--gap="max(0.2px, calc({gap} * var(--u)))"

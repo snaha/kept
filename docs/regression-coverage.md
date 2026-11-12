@@ -99,3 +99,8 @@ artifact paths. Pending native/audio/performance checks stay explicitly pending.
 - Core browser journey passes at 1920×1080, 1440×900, 1024×768 and 390×844 with the explicit Show in library action.
 - Component coverage restores loaded search pages before refreshing, retains query/Dig settings, and cancels a delayed reveal on competing scroll intent. Keyboard scrolling and opening another album also cancel pending reveal. The wheel case publishes albums while loading remains pending and fails when wheel cancellation is removed.
 - Album screenshots inspected at desktop/laptop and phone sizes: direct Favorites/Add controls and long titles remain visible. Tablet Settings and phone Neon controls also inspected. Full native audio, physical touch and phone frame pacing remain untested.
+
+### Cover Flow
+
+- Component checks bound mounted artwork for 1,000 albums, distinguish selecting from opening/playing, exercise End-key navigation, and retain the centered album when a refresh inserts an item before it.
+- The four-size agent journey exercises Cover Flow navigation and returning to the grid's saved scroll position. Initial desktop and phone screenshots inspected; native touch momentum and physical-device 60 fps remain untested.
