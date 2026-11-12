@@ -197,11 +197,13 @@ try {
     run('click', button('Dig into your music'));
     const playingBeforeViews = run('eval', 'document.querySelector(".bar .meta").innerText').trim();
     run('fill', '[aria-label="Collection type"]', 'Playlists');
+    run('wait', '--fn', 'document.querySelectorAll("[role=option]").length === 1');
     run('click', '[role="option"]');
     run('wait', '.tile[aria-label^="Open Quiet evenings"]');
     assert(`document.querySelector('[aria-label="Collection type"]').value==='Playlists' && document.querySelector('.bar .meta').innerText===${playingBeforeViews}`, 'Switching to playlists must preserve playback');
     capture(size, 'playlists');
     run('fill', '[aria-label="Collection type"]', 'Albums');
+    run('wait', '--fn', 'document.querySelectorAll("[role=option]").length === 1');
     run('click', '[role="option"]');
     run('wait', '--fn', 'document.querySelectorAll(".tile-wrap").length>10');
 
@@ -222,9 +224,11 @@ try {
     assert(`document.querySelector('[aria-label="Filter by artist"]').value==='All artists'`, 'Escape must restore the selected label');
     run('fill', '[aria-label="Filter by artist"]', 'Bowie');
     capture(size, 'artist-dropdown');
+    run('wait', '--fn', 'document.querySelectorAll("[role=option]").length === 1');
     run('click', '[role="option"]');
     assert(`document.querySelector('[aria-label="Filter by artist"]').value==='David Bowie'`, 'Artist selection must apply');
     run('fill', '[aria-label="Sort library"]', 'Album title');
+    run('wait', '--fn', 'document.querySelectorAll("[role=option]").length === 1');
     run('click', '[role="option"]');
     assert(`document.querySelector('[aria-label="Sort library"]').value==='Album title'`, 'Sort selection must apply');
     run('click', '.filter-tray [data-slot="button"]');
@@ -240,7 +244,7 @@ try {
     run('press', 'ArrowRight');
     assert(`document.activeElement.id==='settings-tab-advanced' && document.activeElement.getAttribute('aria-selected')==='true'`, 'Settings arrows must focus and select core categories');
     assert(`!window.spotify && !window.spotifyCapture && !document.querySelector('#settings-tab-spotify') && document.querySelector('.profile-settings').innerText.includes('/synthetic/Music')`, 'Core Settings must expose local folders without provider setup');
-    run('click', '.profile-settings > .actions button:first-child');
+    run('click', '.profile-settings button:text-is("Add music folder")');
     run('wait', '--fn', `window.__auditDesktopCommands.some(command=>command[0]==='changeFolder' && command[1]==='add')`);
     assert(`document.querySelector('#settings-tab-advanced').getAttribute('aria-selected')==='true' && document.querySelector('.settings-dialog .advanced')`, 'Advanced settings must be reachable');
     assert(`document.documentElement.scrollWidth<=innerWidth`, 'Settings must fit the window');
@@ -316,6 +320,7 @@ try {
     run('mouse', 'move', String(width / 2), '4');
     run('wait', '200');
     run('fill', '[aria-label="Search result type"]', 'Songs');
+    run('wait', '--fn', 'document.querySelectorAll("[role=option]").length === 1');
     run('click', '[role="option"]');
     assert(`document.querySelector('[aria-label="Song results"]') && !document.querySelector('[aria-label="Albums results"]')`, 'Catalog result-type selection must narrow the results');
     capture(size, 'catalog-search');
@@ -365,6 +370,7 @@ try {
     run('press', 'Escape');
     run('mouse', 'move', String(width / 2), '4');
     run('fill', '[aria-label="Collection type"]', 'Playlists');
+    run('wait', '--fn', 'document.querySelectorAll("[role=option]").length === 1');
     run('click', '[role="option"]');
     run('click', '.tile[aria-label^="Open Quiet evenings"]');
     run('wait', '--fn', 'document.querySelectorAll(".album-view .track-row").length===3');
@@ -390,6 +396,10 @@ try {
     run('click', '.album-view .track-row:nth-child(2) .track-add');
     run('wait', '--fn', 'document.querySelectorAll(".now-playing .song").length===4');
     assert(`window.__auditAudio[0].paused`, 'Per-track Add to queue must append the song without starting playback');
+    run('click', button('Playback options'));
+    run('click', '#playback-options button[aria-label="Show in library"]');
+    run('wait', '--fn', '!document.querySelector(".now-playing") && !!document.activeElement?.getAttribute("data-collection-id")');
+    assert(`(() => { const r = document.activeElement.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; })()`, 'Show in library must reveal and focus the playing album');
     results.push({ size, status: 'passed' });
     console.log(`${size}: passed`);
   }

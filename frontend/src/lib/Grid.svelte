@@ -1,6 +1,6 @@
 <script lang="ts">
   import { keyboardScope } from './keyboard';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { createBrowseView } from './browse-view.svelte';
   import { registerBrowseSource } from './browse-source';
@@ -16,7 +16,7 @@
   import { library, setMode, type Mode, type Tile } from './library.svelte';
   import { session } from './api.svelte';
   import CatalogSearch from './CatalogSearch.svelte';
-  import { catalogSearch, startCatalogSearch } from './catalog-search.svelte';
+  import { catalogSearch, startCatalogSearch, captureCatalogSearch, restoreCatalogSearch } from './catalog-search.svelte';
   import { player, collectionPlayback } from './player.svelte';
   import CollectionPlayback from './CollectionPlayback.svelte';
   import DigPanel from './DigPanel.svelte';
@@ -105,7 +105,7 @@
   }));
   const shown = $derived(view.collections);
   onMount(() => registerBrowseSource(() => searching ? catalogSearch.collections : view.collections));
-  function filterChanged() { scrollTop = 0; library.details = undefined; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
+  function filterChanged() { cancelReveal(); previousBrowse = undefined; revealMessage = ''; scrollTop = 0; library.details = undefined; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
   function changeMode(mode: Mode) { artistFilter = ''; favoritesOnly = false; filterChanged(); void setMode(mode); }
   function changeSource() { artistFilter = ''; filterChanged(); }
   function resetFilters() { query = ''; artistFilter = ''; library.source = 'all'; sort = DEFAULT_SORT; sortDirection = 1; showFilter = 'all'; favoritesOnly = false; coversOnly = false; resetDig(); filterChanged(); }
@@ -151,6 +151,116 @@
   }
   $effect(() => { const tiles = shown; untrack(() => warmCovers(tiles)); });
   onDestroy(() => { disposed = true; queue = []; for (const i of loading.values()) i.src = ''; loading.clear(); });
+
+  type BrowseSnapshot = {
+    mode: Mode
+    source: typeof library.source
+    query: string
+    artist: string
+    show: string
+    favorites: boolean
+    covers: boolean
+    sort: string
+    top: number
+    dig: typeof dig
+    search: ReturnType<typeof captureCatalogSearch>
+    searchKind: string
+  }
+  let previousBrowse = $state<BrowseSnapshot>()
+  let revealMessage = $state('')
+  let wantedAlbum = $state('')
+  let navigationGeneration = 0
+  let navigationFrame = 0
+  function cancelReveal() {
+    navigationGeneration++
+    wantedAlbum = ''
+    cancelAnimationFrame(navigationFrame)
+  }
+  function finishReveal(index: number) {
+    const mine = navigationGeneration
+    const id = wantedAlbum
+    wantedAlbum = ''
+    navigationFrame = requestAnimationFrame(() => {
+      if (mine !== navigationGeneration || activeId !== id) return
+      scroller.scrollTo({ top: Math.max(0, filterHeight + pixelGap + Math.floor(index / effectiveCols) * rowStep + rowStep / 2 - viewportHeight / 2), behavior: 'instant' })
+      scrollTop = scroller.scrollTop
+      navigationFrame = requestAnimationFrame(() => {
+        if (mine !== navigationGeneration) return
+        document.querySelector<HTMLButtonElement>(`[data-collection-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: true })
+      })
+    })
+  }
+  export function showPlayingAlbum() {
+    if (!activeId) return
+    cancelReveal()
+    revealMessage = ''
+    library.details = undefined
+    player.queueOpen = false
+    player.view = ''
+    player.shortcutsOpen = false
+    if (searching || !shown.some(tile => tile.id === activeId)) {
+      previousBrowse ??= {
+        mode: library.mode, source: library.source, query, artist: artistFilter,
+        show: showFilter, favorites: favoritesOnly, covers: coversOnly, sort,
+        top: scroller.scrollTop, dig: { ...dig }, search: captureCatalogSearch(), searchKind,
+      }
+      query = ''
+      artistFilter = ''
+      showFilter = 'all'
+      favoritesOnly = false
+      coversOnly = false
+      library.source = 'all'
+      resetDig()
+      if (library.mode !== 'albums') void setMode('albums')
+      revealMessage = 'Showing the playing album. Your previous view is saved.'
+    }
+    wantedAlbum = activeId
+  }
+  async function returnToBrowse() {
+    const saved = previousBrowse
+    if (!saved) return
+    cancelReveal()
+    const mine = navigationGeneration
+    previousBrowse = undefined
+    revealMessage = ''
+    const changedMode = library.mode !== saved.mode
+    if (changedMode) await setMode(saved.mode)
+    if (mine !== navigationGeneration) return
+    query = saved.query
+    searchKind = saved.searchKind
+    restoreCatalogSearch(saved.search)
+    artistFilter = saved.artist
+    showFilter = saved.show
+    favoritesOnly = saved.favorites
+    coversOnly = saved.covers
+    sort = saved.sort
+    library.source = saved.source
+    Object.assign(dig, saved.dig)
+    await tick()
+    if (mine !== navigationGeneration) return
+    scroller.scrollTo({ top: saved.top, behavior: 'instant' })
+    scrollTop = scroller.scrollTop
+    document.querySelector<HTMLInputElement>('[aria-label="Search library"]')?.focus({ preventScroll: true })
+  }
+  $effect(() => {
+    searchAccount
+    session.api
+    untrack(() => { cancelReveal(); previousBrowse = undefined; revealMessage = '' })
+  })
+  $effect(() => {
+    if (!wantedAlbum) return
+    if (activeId !== wantedAlbum || library.details || library.mode !== 'albums') {
+      untrack(cancelReveal)
+      return
+    }
+    const index = shown.findIndex(tile => tile.id === wantedAlbum)
+    if (index >= 0) untrack(() => finishReveal(index))
+    else if (!library.loading) {
+      wantedAlbum = ''
+      revealMessage = 'The playing album is not available in this library.'
+    }
+  })
+  onDestroy(cancelReveal)
 
   let scroller: HTMLDivElement;
   // Playback and background refreshes keep the user's scroll position.
@@ -253,13 +363,14 @@
     {:else if toolbar.mode === 'theme'}<ComponentStyles />{/if}
     </div>
   {/if}
+  {#if revealMessage}<div class="color-status" role="status">{revealMessage}{#if previousBrowse}<button onclick={() => void returnToBrowse()}>Return to previous view</button>{/if}</div>{/if}
   {#if sort === 'color'}<div class="color-status" role="status">{catalog.colorsLoading ? `Reading cover colors · ${colorsReady} ready` : 'Cover colors ready'}<button disabled={catalog.colorsLoading} onclick={applySort}>Apply color sort</button></div>{/if}
 </div>
 
 {#snippet collectionCard(t: Tile, index = -1)}
       {@const playback = collectionPlayback(t)}
       <div class="tile-wrap" class:coverless={!t.cover} class:discovered={t.id === discoveryId} class:current={playback.current} class:listening={playback.listening}>
-        <button class="tile" class:active={playback.listening} onclick={() => { library.details = t; player.queueOpen = false; player.view = ''; }} aria-label="Open {t.title} — {t.sub}" aria-current={playback.current ? 'true' : undefined}>
+        <button class="tile" class:active={playback.listening} data-collection-id={t.id} onclick={() => { cancelReveal(); library.details = t; player.queueOpen = false; player.view = ''; }} aria-label="Open {t.title} — {t.sub}" aria-current={playback.current ? 'true' : undefined}>
           {#if t.cover && (warmed.has(t.cover) || near(index))}<img src={t.cover} alt="" draggable="false" onload={() => warmed.add(t.cover)} />{/if}
         </button>
         <div class="tile-play"><CollectionPlayback collection={t} compact onplay={() => { if (!t.available) library.details = t; else pick(t); }} /></div>
@@ -269,7 +380,16 @@
 
 <!-- an image dropped anywhere becomes the custom background -->
 <svelte:window onkeydown={e => {
-  if (e.key !== 'Escape' || e.defaultPrevented || player.view || player.queueOpen || player.visOpen) return;
+  const target = e.target
+  const combo = e.ctrlKey || e.metaKey
+  if (['PageDown', 'PageUp', 'Home', 'End', 'ArrowDown', 'ArrowUp', 'Escape'].includes(e.key)) cancelReveal()
+  const editing = target instanceof Element && !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"], [role="menu"], [role="radiogroup"], [role="tablist"]')
+  if (!e.defaultPrevented && !e.isComposing && !e.repeat && !e.altKey && !player.visOpen && !player.view && e.key.toLowerCase() === 'l' && (combo || !editing)) {
+    e.preventDefault()
+    showPlayingAlbum()
+    return
+  }
+  if (e.key !== 'Escape'  || e.defaultPrevented || player.view || player.queueOpen || player.visOpen) return;
   if (library.details) library.details = undefined;
   else if (dig.open) { dig.open = false; document.querySelector<HTMLButtonElement>('[aria-label="Dig into your music"]')?.focus(); }
   else if (toolbar.mode !== 'library') { backToSelector(); document.querySelector<HTMLButtonElement>('[aria-label="Choose toolbar mode"]')?.focus(); }
@@ -280,8 +400,9 @@
   ondragover={(e) => e.preventDefault()} ondrop={(e) => { e.preventDefault(); const f = e.dataTransfer?.files[0]; if (f) importBackground(f); }} />
 
 <!-- the material sits on the cards' layer so it scrolls and drifts with them, or on the fixed viewport behind them -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="scroll" inert={covered} class:fill={!bg.tile} class:m-vinyl={!bg.scroll && bg.material === 'vinyl'} class:m-grille={!bg.scroll && bg.material === 'grille'}
-  class:m-fabric={!bg.scroll && bg.material === 'fabric'} class:m-custom={!bg.scroll && (bg.material === 'custom' || bg.material === 'noise')} style:--custom={bg.material === 'noise' ? `url("${noiseBackground}")` : bg.custom ? `url("${bg.custom}")` : 'none'} {onscroll} onwheel={(e) => { if (e.deltaY < 0 && scrollTop <= 4) revealAtTop(); }} bind:this={scroller} bind:clientWidth={viewportWidth} bind:clientHeight={viewportHeight}>
+  class:m-fabric={!bg.scroll && bg.material === 'fabric'} class:m-custom={!bg.scroll && (bg.material === 'custom' || bg.material === 'noise')} style:--custom={bg.material === 'noise' ? `url("${noiseBackground}")` : bg.custom ? `url("${bg.custom}")` : 'none'} {onscroll} onpointerdown={cancelReveal} onwheel={(e) => { cancelReveal(); if (e.deltaY < 0 && scrollTop <= 4) revealAtTop(); }} bind:this={scroller} bind:clientWidth={viewportWidth} bind:clientHeight={viewportHeight}>
   {#if searching}
     <CatalogSearch bind:kind={searchKind} top={filterHeight} cols={effectiveCols} gap={pixelGap} card={collectionCard}
       onclear={() => { query = ''; filterChanged(); }}

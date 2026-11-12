@@ -250,6 +250,8 @@ Artwork-derived color on the album layout: bordered back button and overflow-men
 
 The expanded player uses the shared artwork-derived view and retains the original listening context beneath the full cover. Queue and Recently played tabs show counts and a narrow selected underline, with roving focus and arrow/Home/End navigation. Each tab remembers its scroll position while the view stays open; on phone, a first visit to the other tab preserves the body position. Queue rows retain reorder/removal and availability states; the current track toggles pause/resume, with listening bars only for confirmed playback and a distinct pending state. History retains search, paging, replay, clear, and retry. Track action menus return focus to their trigger, and their Escape dismissal stays local.
 
+Show in library is available from Playback options and the L shortcut. It reveals the playing album independently of layout, temporarily clearing a hiding query/filter and offering Return to previous view. A newer navigation or scroll cancels a pending reveal; background work cannot trigger a later jump.
+
 ### Dig
 
 The spatial control maps Sad→Happy horizontally and Calm→Intense vertically. Pointer capture supports dragging; arrow keys adjust by (5) and Home centers it. Familiar→Forgotten, Acoustic→Electric, and Vocal→Instrumental use the existing sliders. Mood and sound are manual album tags because current providers do not supply audio traits. Familiarity and play sorting use confirmed, durably persisted history aggregates; browser totals are separate from the rolling history display. Untagged albums stay in All music; zero matches explain the tag requirement. Do not present manual tags as inferred audio analysis.

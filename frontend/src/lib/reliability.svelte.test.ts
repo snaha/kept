@@ -4,7 +4,7 @@ import { createRawSnippet, tick } from 'svelte';
 import type { SubsonicAPI } from 'subsonic-api';
 import { session } from './api.svelte';
 import { library, addCollection, pick, setMode, watchScan, requestScan } from './library.svelte';
-import { catalogSearch, startCatalogSearch, moreCatalogSearch, disposeCatalogSearch } from './catalog-search.svelte';
+import { catalogSearch, startCatalogSearch, moreCatalogSearch, disposeCatalogSearch, captureCatalogSearch, restoreCatalogSearch } from './catalog-search.svelte';
 import { player, play, pause, moveQueue, enqueue, disposePlayback, beginCollectionOperation } from './player.svelte';
 import { readJsonPreference, writePreference, retryPreferences, subscribePreferences } from './preferences';
 import { reconcileBrowseOrder, orderedBrowseCollections } from './browse-view';
@@ -74,6 +74,11 @@ describe('catalog generations and asynchronous intent', () => {
     }) });
     startCatalogSearch('song', 'all'); await vi.waitFor(() => expect(catalogSearch.loading).toBe(false));
     moreCatalogSearch(); await vi.waitFor(() => expect(catalogSearch.loading).toBe(false)); expect(catalogSearch.tracks).toHaveLength(100);
+    const saved = captureCatalogSearch()
+    startCatalogSearch('', 'all')
+    expect(catalogSearch.tracks).toHaveLength(0)
+    restoreCatalogSearch(saved)
+    expect(catalogSearch.tracks).toHaveLength(100)
     refreshing = true;
     startCatalogSearch('song', 'all'); // Cancel a refresh before its debounce resolves.
     startCatalogSearch('song', 'all');
@@ -420,6 +425,67 @@ describe('review regressions', () => {
     await view.unmount(); await tick();
     expect(TestImage.started.slice(1).every(image => image.src === '')).toBe(true); // unmount releases the loads still in flight
   });
+  it('reveals the playing album from a matching search and restores the previous query and Dig settings', async () => {
+    const ALBUM_COUNT = 240
+    const PLAYING_INDEX = 150
+    const MOOD = 70
+    const albums = Array.from({ length: ALBUM_COUNT }, (_, index) => ({ ...tile, id: `local:album:${index}`, rawId: String(index), title: `Album ${index}` }))
+    library.mode = 'albums'
+    library.loading = false
+    const view = render(Grid, { tiles: albums, activeId: albums[PLAYING_INDEX].id, onpick: () => {}, hidden: false })
+    await tick()
+    const search = document.querySelector<HTMLInputElement>('[aria-label="Search library"]')!
+    search.value = 'Album 150'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    dig.moodOn = true
+    dig.mood = MOOD
+    await tick()
+    search.blur()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true }))
+    await vi.waitFor(() => expect(document.activeElement?.getAttribute('data-collection-id')).toBe(albums[PLAYING_INDEX].id))
+    expect(search.value).toBe('')
+    expect(dig.moodOn).toBe(false)
+    const bounds = document.activeElement!.getBoundingClientRect()
+    expect(bounds.top).toBeGreaterThanOrEqual(0)
+    expect(bounds.bottom).toBeLessThanOrEqual(innerHeight)
+    const back = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Return to previous view')!
+    back.click()
+    await vi.waitFor(() => expect(search.value).toBe('Album 150'))
+    expect(dig.moodOn).toBe(true)
+    expect(dig.mood).toBe(MOOD)
+    expect(document.activeElement).toBe(search)
+    await view.unmount()
+    dig.moodOn = false
+  })
+  it.each(['wheel', 'keyboard', 'album'])('cancels a pending reveal on competing %s intent before albums arrive', async intent => {
+    const ALBUM_COUNT = 240
+    const result = deferred<ReturnType<typeof ok>>()
+    session.api = api({ getAlbumList2: vi.fn(() => result.promise) })
+    const playlist = { ...tile, id: 'local:playlist:p', kind: 'playlist' as const }
+    const target = { ...tile, id: 'local:album:z', title: 'Z album' }
+    const albums = [...Array.from({ length: ALBUM_COUNT }, (_, index) => ({ ...tile, id: `local:album:${index}` })), target]
+    library.mode = 'playlists'
+    library.loading = false
+    const view = render(Grid, { tiles: [playlist], activeId: target.id, onpick: () => {}, hidden: false })
+    await tick()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true }))
+    await tick()
+    const scroller = document.querySelector<HTMLElement>('.scroll')!
+    if (intent === 'wheel') scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: 1 }))
+    else if (intent === 'keyboard') scroller.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    else { library.details = playlist; await tick() }
+    // Publish the destination while the fetch is still pending: settling the fetch cannot cancel this test's reveal.
+    await view.rerender({ tiles: albums })
+    expect(library.loading).toBe(true)
+    await new Promise(requestAnimationFrame)
+    await new Promise(requestAnimationFrame)
+    expect(scroller.scrollTop).toBe(0)
+    expect(document.activeElement?.getAttribute('data-collection-id')).not.toBe(target.id)
+    result.resolve(ok({ albumList2: { album: [] } }))
+    await vi.waitFor(() => expect(library.loading).toBe(false))
+    await view.unmount()
+    library.details = undefined
+  })
   it('opens the playing collection from the bar body and the expanded player from the Menu key', async () => {
     const origin = { ...tile, id: 'local:album:bar', rawId: 'bar', title: 'Bar Album' };
     render(Grid, { tiles: [origin], onpick: () => {}, hidden: false }); render(Bar, { hidden: false }); await tick();
