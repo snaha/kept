@@ -20,6 +20,7 @@
   import { player, collectionPlayback } from './player.svelte';
   import CollectionPlayback from './CollectionPlayback.svelte';
   import CoverFlow from './cover-flow.svelte'
+  import './sleeve-finish.css'
   import DigPanel from './DigPanel.svelte';
   import { catalog, dig, digActive, digScore, resetDig, metadata, warmColors, coverRevision } from './discovery.svelte';
   import CollectionDetails from './CollectionDetails.svelte';
@@ -36,6 +37,8 @@
   }
   let cols = $state(savedNumber('grid.cols', 6, 1, 10));
   let advancedLayout = $state(false);
+  let gloss = $state(readPreference('grid.gloss') === '1')
+  $effect(() => { writePreference('grid.gloss', gloss ? '1' : '0') })
   let browseLayout = $state(readPreference('library.layout') === 'flow' ? 'flow' : 'grid')
   let flowId = $state('')
   let coverFlow = $state<CoverFlow>()
@@ -378,6 +381,7 @@
         {:else}<label class="slider-control"><span>Grid size</span><Slider type="single" min={1} max={10} step={1} value={11 - cols} onValueChange={resizeGrid} aria-label="Advanced grid size" /><output>{effectiveCols} across</output></label>{/if}
         <Button variant="outline" size="sm" aria-pressed={advancedLayout} onclick={() => (advancedLayout = !advancedLayout)}>{advancedLayout ? 'Simple' : 'Advanced'}</Button>
         {/if}
+        <Button variant="outline" size="sm" aria-label="Glossy sleeves" aria-pressed={gloss} onclick={() => (gloss = !gloss)}>Glossy sleeves</Button>
       </div>
     {:else if toolbar.mode === 'look'}
       <div class="controls"><span class="group" role="radiogroup" aria-label="Background">{#each Object.entries(MATERIALS) as [key, label] (key)}<button class="opt" class:on={bg.material === key} role="radio" aria-checked={bg.material === key} disabled={key === 'custom' && !bg.custom} onclick={() => (bg.material = key as keyof typeof MATERIALS)}>{label}</button>{/each}<button class="opt" onclick={randomBackground}>Random</button></span></div>
@@ -391,7 +395,7 @@
 {#snippet collectionCard(t: Tile, index = -1)}
       {@const playback = collectionPlayback(t)}
       <div class="tile-wrap" class:coverless={!t.cover} class:discovered={t.id === discoveryId} class:current={playback.current} class:listening={playback.listening}>
-        <button class="tile" class:active={playback.listening} data-collection-id={t.id} onclick={() => { cancelReveal(); library.details = t; player.queueOpen = false; player.view = ''; }} aria-label="Open {t.title} — {t.sub}" aria-current={playback.current ? 'true' : undefined}>
+        <button class="tile" class:glossy-sleeve={gloss && !!t.cover} class:active={playback.listening} data-collection-id={t.id} onclick={() => { cancelReveal(); library.details = t; player.queueOpen = false; player.view = ''; }} aria-label="Open {t.title} — {t.sub}" aria-current={playback.current ? 'true' : undefined}>
           {#if t.cover && (warmed.has(t.cover) || near(index))}<img src={t.cover} alt="" draggable="false" onload={() => warmed.add(t.cover)} />{/if}
         </button>
         <div class="tile-play"><CollectionPlayback collection={t} compact onplay={() => { if (!t.available) library.details = t; else pick(t); }} /></div>
@@ -429,7 +433,7 @@
       onclear={() => { query = ''; filterChanged(); }}
       onartist={artist => { query = ''; filterChanged(); onpick(artist); }} />
   {:else if browseLayout === 'flow'}
-    <CoverFlow bind:this={coverFlow} tiles={shown} top={filterHeight} bind:selectedId={flowId} onplay={pick} onopen={tile => { cancelReveal(); library.details = tile; player.queueOpen = false; player.view = '' }} />
+    <CoverFlow {gloss} bind:this={coverFlow} tiles={shown} top={filterHeight} bind:selectedId={flowId} onplay={pick} onopen={tile => { cancelReveal(); library.details = tile; player.queueOpen = false; player.view = '' }} />
   {:else}
   <div class="grid" class:m-vinyl={bg.scroll && bg.material === 'vinyl'} class:m-grille={bg.scroll && bg.material === 'grille'}
     class:m-fabric={bg.scroll && bg.material === 'fabric'} class:m-custom={bg.scroll && (bg.material === 'custom' || bg.material === 'noise')} style:--cols={effectiveCols} style:--gap="max(0.2px, calc({gap} * var(--u)))"

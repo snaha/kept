@@ -1,0 +1,14 @@
+/* Static laminate attached to the cover: no per-pointer work or animated filters.
+   Text and playback controls sit outside this layer. Artwork without a cover stays plain. */
+.glossy-sleeve::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(125deg, #fff0 15%, #ffffff1a 32%, #ffffff05 44%, #fff0 45%, #fff0 70%, #ffffff09 82%, #fff0 90%);
+  box-shadow: inset 1px 1px 0 #ffffff36, inset -1px -1px 0 #00000026;
+}
+@media (forced-colors: active) {
+  .glossy-sleeve::after { display: none; }
+}

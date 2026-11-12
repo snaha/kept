@@ -291,3 +291,9 @@ Only nearby covers mount; the selected cover requests larger artwork. Grid colum
 spacing preferences remain independent. Search remains a readable flat result list.
 Reduced motion removes the perspective transform. There is no endless loop or tilted
 wall; navigation has a clear beginning and end.
+
+Glossy sleeves is an optional, persistent finish shared by the grid and Cover Flow.
+It adds a restrained static laminate band and edge highlight to artwork only; labels,
+focus outlines and playback controls remain unobscured. No image filters, animated
+noise or pointer-driven painting are used. Plain artwork remains the default, and
+forced-colors mode removes the decoration.
