@@ -110,3 +110,11 @@ artifact paths. Pending native/audio/performance checks stay explicitly pending.
 - The integrated journey passes at 1920×1080, 1440×900, 1024×768 and 390×844, including Cover Flow End/Home navigation, bounded covers, saved grid scroll, and gloss toggling across layouts without changing paused playback.
 - Inspected gloss screenshots at desktop/tablet/phone sizes and the grid at laptop size. The highlight stays inside artwork; long titles, direct actions and the bottom playback bar remain readable. These are reviewed implementation artifacts, not replacement approved references.
 - Physical touch, real-device frame pacing and audible-output checks remain separate release gaps.
+
+### Phone control improvements (kept outside main)
+
+- Full remote queue snapshots retain queue-entry IDs and collection occurrence positions. Time-only updates retain the queue array; host messages only repeat the queue after changes. Host tests cover duplicate move/remove, stale IDs, and whole-second publication.
+- Remote entry points cover seek, jump, remove/move, playback order, random from the phone's filtered collection snapshot, pause, cancel, and history replay. They do not start local audio. Host errors and connection failures are visible; leaving remote mode invalidates the socket before closing it.
+- Two-browser synthetic journey passes remote playback without phone audio, queue jump, seek, destination handoff and disconnect feedback. Queue screenshots captured at four sizes; phone and tablet inspected. The remote phone layout uses compact artwork to prioritize queue actions. Phone history is explicitly labeled separately from the computer's queue.
+- Desktop relay tests cover authentication, cached queue replay with incremental state, replacement hosts, and teardown. A replaced host cannot publish late state or reconnect to reclaim ownership. Ping/pong heartbeat terminates silent connections.
+- Physical-phone gestures, actual LAN outages/background suspension, OS lock-screen remote commands and audible output remain untested. Remote host listening history is not streamed; the history tab remains the phone's history.

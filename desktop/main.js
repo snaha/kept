@@ -1,6 +1,7 @@
 import { validateDesktopRequest, validateHistoryEnvelope } from '../shared/contracts.js';
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session as electronSession, shell } from 'electron';
 import { MusicDatabase } from './music-database.js';
+import { attachControl } from './control-relay.js';
 import { closeFrontend, isMusicDocument, listenFrontend, stopMusicServer } from './service-lifecycle.js';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -99,7 +100,7 @@ async function waitFor(url, child) {
 let navidrome;
 let musicDatabase;
 
-let frontendServer;
+let frontendServer, control;
 let bootstrapping = true;
 let phase = 'setup', startupError = '', startupWarning = '', startPromise;
 let st, local = '';
@@ -260,6 +261,7 @@ app.whenReady().then(async () => {
         child.on('exit', (code, signal) => { if (navidrome === child && !app.isQuitting && phase === 'ready') { startupError = `The music server stopped (${signal || `exit ${code}`}). Restart Music to reconnect.`; phase = 'error'; changed(); } });
         await waitFor(`${local}/rest/ping`, child);
         frontendServer = createFrontend();
+        control = attachControl(frontendServer, { sharePassword: st.sharePassword, hostPassword: st.password });
         await listenFrontend(frontendServer, st.webPort);
         musicDatabase = new MusicDatabase(path.join(profile.directory, 'music.sqlite'));
         phase = 'ready';
@@ -307,9 +309,10 @@ function scheduleRelaunch(args) {
   setTimeout(() => app.quit(), 150);
 }
 async function stopServices() {
-  const database = musicDatabase, server = frontendServer, child = navidrome;
+  const database = musicDatabase, server = frontendServer, child = navidrome, relay = control;
   musicDatabase = null;
-  frontendServer = null;
+  frontendServer = null; control = null;
+  relay?.close(); // upgraded sockets are not HTTP connections, so the server close below would wait on them
   navidrome = null;
   const results = await Promise.allSettled([database?.close(), closeFrontend(server), stopMusicServer(child)]);
   for (const result of results) if (result.status === 'rejected') console.error('Music cleanup:', result.reason);

@@ -116,6 +116,8 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
     await build({
       entryPoints: [new URL('../main.js', import.meta.url).pathname], outfile,
       bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
+      // ws is CommonJS and requires node builtins at load; an ESM bundle has no require of its own
+      banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
       plugins: [{ name: 'main-fixture', setup(builder) {
         builder.onResolve({ filter: /^(electron|node:child_process|\.\/(profiles|storage-migration|music-database)\.js)$/ }, ({ path: name }) => ({ path: mapping[name], namespace: 'fixture' }));
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path: name }) => ({ contents: mocks[name], loader: 'js' }));

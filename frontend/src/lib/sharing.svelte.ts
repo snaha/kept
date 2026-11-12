@@ -1,7 +1,12 @@
 import { readPreference, writePreference } from './preferences';
 import { session } from './api.svelte';
+import { randomId } from './random-id';
 
 const USER = 'share';
+// what the phone does with the library: control the player on this computer, or play on the phone itself.
+// The link carries it as `m`; the Share drawer shows one code per mode
+export type ShareMode = 'control' | 'library';
+export const withMode = (link: string, mode: ShareMode) => `${link}&m=${mode}`;
 
 // Builds the link a phone can open: frontend URL + account in the fragment. Needs an admin login,
 // because it creates (or re-keys) the non-admin 'share' user. Navidrome has no Subsonic endpoints for
@@ -12,7 +17,7 @@ export async function shareLink() {
   const d = window.desktop ? (await window.desktop.status()).share : undefined;
   let password = d?.password ?? readPreference('share.password');
   const fresh = !password;
-  if (!password) password = crypto.randomUUID().replace(/-/g, '');
+  if (!password) password = randomId();
 
   const { token } = (await api.navidromeSession()) as { token: string };
   const headers = { 'x-nd-authorization': `Bearer ${token}`, 'content-type': 'application/json' };

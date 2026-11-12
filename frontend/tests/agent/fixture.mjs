@@ -1,5 +1,5 @@
 // Synthetic local music only; no real account, files or audio output.
-export const bootstrap = () => {
+export const bootstrap = (controlAudit = false) => {
   const w = window;
   localStorage.clear();
   localStorage.setItem('motion', '0');
@@ -9,6 +9,7 @@ export const bootstrap = () => {
     profile: { name: 'audit', label: 'Synthetic audit', directory: '/synthetic/Data/profiles/audit', existing: false, portable: true },
     musicFolder: '/synthetic/Music', musicFolders: ['/synthetic/Music'], defaultMusicFolder: '/synthetic/Music', defaultMusicFolderAvailable: true, source: 'local', canCopy: false,
   };
+  if (controlAudit) desktopStatus.share = { webPort: Number(location.port), port: Number(location.port), password: 'share-test-only' };
   const listeners = new Set();
   w.__auditDesktopCommands = [];
   const changed = changes => { Object.assign(desktopStatus, changes); for (const listener of listeners) listener(structuredClone(desktopStatus)); };
@@ -24,6 +25,11 @@ export const bootstrap = () => {
     showData: async () => { w.__auditDesktopCommands.push(['showData']); return ''; },
     restart: async () => { w.__auditDesktopCommands.push(['restart']); }, lanIp: async () => '127.0.0.1',
   };
+  if (controlAudit && new URLSearchParams(location.search).has('phone')) {
+    delete w.desktop;
+    localStorage.setItem('creds', JSON.stringify({ url: location.origin, username: 'share', password: 'share-test-only' }));
+    localStorage.setItem('share.phone', JSON.stringify({ mode: 'control', password: 'share-test-only' }));
+  }
   const scope = crypto.randomUUID();
   const historyCall = async (method, args) => {
     const response = await fetch(`/audit-history/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...args, scope: `${args.scope}:${scope}` }) });
