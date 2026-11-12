@@ -70,7 +70,7 @@ jobs:
   mac:
     needs: [prepare, checks]
     if: needs.prepare.outputs.mac == 'true'
-    runs-on: macos-14 # Apple Silicon
+    runs-on: macos-15 # Apple Silicon
     env:
       MUSIC_CHANNEL: ${{ needs.prepare.outputs.channel }}
       # electron-builder skips all signing on pull requests, including ad-hoc, without this
