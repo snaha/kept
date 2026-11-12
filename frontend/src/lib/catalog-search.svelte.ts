@@ -136,3 +136,24 @@ export function moreCatalogSearch() {
 }
 
 export function disposeCatalogSearch() { generation++; clearTimeout(timer); catalogSearch.loading = false; playlistApi = null; playlistRequest = undefined; }
+
+// A deliberate detour can restore its loaded pages immediately, then refresh in place.
+export function captureCatalogSearch() {
+  return {
+    scope: accountScope, api: session.api, query: catalogSearch.query, source: catalogSearch.source,
+    collections: catalogSearch.collections, artists: catalogSearch.artists, tracks: catalogSearch.tracks,
+    offsets: { ...localOffsets }, targets: { ...refreshTargets },
+  }
+}
+export function restoreCatalogSearch(saved: ReturnType<typeof captureCatalogSearch>) {
+  if (saved.scope !== accountScope || saved.api !== session.api) return
+  generation++
+  clearTimeout(timer)
+  catalogSearch.query = saved.query
+  catalogSearch.source = saved.source
+  catalogSearch.collections = saved.collections
+  catalogSearch.artists = saved.artists
+  catalogSearch.tracks = saved.tracks
+  localOffsets = { ...saved.offsets }
+  refreshTargets = { ...saved.targets }
+}

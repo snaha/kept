@@ -18,7 +18,7 @@
     return () => { active = false; };
   });
   import Share from './Share.svelte';
-  let { hidden }: { hidden: boolean } = $props();
+  let { hidden, onshowinlibrary }: { hidden: boolean; onshowinlibrary?: () => void } = $props()
   // publish the bar height so the song list can pad for it
   let barHeight = $state(0);
   $effect(() => { document.documentElement.style.setProperty('--botbar', `${barHeight}px`); });
@@ -100,6 +100,7 @@
   <div id="playback-options" class="menu-panel" style:--options-top={`${menuTop}px`} class:open={menu} role="menu" aria-label="Playback options" aria-hidden={!menu} inert={!menu} bind:this={panel} onkeydown={menuKeys}>
     {#if session.admin}<button role="menuitem" tabindex={menu ? 0 : -1} class:on={player.view === 'share'} onclick={share}>Share</button>{/if}
     <button role="menuitem" tabindex={menu ? 0 : -1} onclick={() => { player.queueTab = 'history'; player.queueOpen = true; menu = false; }}>Recently played</button>
+    {#if onshowinlibrary}<button aria-label="Show in library" role="menuitem" tabindex={menu ? 0 : -1} disabled={!player.song?.albumId} onclick={() => { menu = false; onshowinlibrary?.(); }}>Show in library <span aria-hidden="true">L</span></button>{/if}
     <button role="menuitem" tabindex={menu ? 0 : -1} onclick={visualize}>Visualizer</button>
     <button role="menuitem" tabindex={menu ? 0 : -1} onclick={() => { player.shortcutsOpen = true; menu = false; }}>Keyboard shortcuts <span aria-hidden="true">?</span></button>
     <span class="rule"></span>
