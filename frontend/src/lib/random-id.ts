@@ -1,3 +1,8 @@
-// ponytail: Math.random ids. crypto.randomUUID exists only in secure contexts, and a share link opened over plain http
-// on the LAN is not one, so every id and the auth salt come from here
-export const randomId = () => Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+// getRandomValues also works on LAN HTTP pages, where randomUUID is unavailable.
+const ID_BYTES = 16
+const HEX_RADIX = 16
+const HEX_BYTE_WIDTH = 2
+export function randomId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(ID_BYTES))
+  return Array.from(bytes, byte => byte.toString(HEX_RADIX).padStart(HEX_BYTE_WIDTH, '0')).join('')
+}
