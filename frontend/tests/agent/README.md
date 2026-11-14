@@ -5,6 +5,14 @@ are no maintained Playwright application specs or Cypress tests in this workflow
 Separate Vitest component tests use a Playwright browser provider; the application
 journey below remains agent-driven.
 
+## Full build gate
+
+Run `pnpm --dir desktop validate` for the maintained complete run. It builds the
+candidate, starts the fixture on a free port, runs this journey at all four sizes
+using the pinned CLI and installed Playwright Chromium, saves evidence and cleans
+up. CI runs it before packaging. See [testing](../../../docs/testing.md).
+The commands below are for interactive diagnosis and focused reruns.
+
 ## Start the isolated fixture
 
 ```sh
@@ -20,11 +28,11 @@ the actual app, whose settings and playback are real.
 
 ## Repeatable agent-browser assertions
 
-The fixture has a small contract test for the current desktop status API and
-listener cleanup. Run it with `pnpm --dir frontend audit:test`; CI runs it alongside
+The fixture has contract tests for the current desktop status API, listener
+cleanup, serving the selected build, ephemeral ports and process shutdown. Run it with `pnpm --dir frontend audit:test`; CI runs it alongside
 frontend checks and the desktop/frontend test suite before packaging.
 
-With `agent-browser` installed and its browser available:
+With the fixture running and Chromium installed:
 
 ```sh
 pnpm --dir frontend audit:regressions
@@ -32,7 +40,7 @@ pnpm --dir frontend audit:regressions
 
 If a browser executable is already installed, set
 `AGENT_BROWSER_EXECUTABLE_PATH` to its full path. Otherwise run
-`agent-browser install` using your installed CLI's documented setup. The CLI
+`pnpm --dir frontend exec agent-browser install`. The CLI
 must support `set viewport`, `hover`, `focus`, `eval`, `snapshot` and `screenshot`.
 Set `MUSIC_AGENT_BROWSER` to use another CLI executable location.
 
@@ -43,6 +51,10 @@ dropdown opening/no-match/Escape/selection/reset,
 Settings modal centering, focus containment, category keys, local folder actions,
 keyboard selection and nested Escape, click-only menus and keyboard dismissal, track-detail
 overflow, and scroll/tile-order preservation during background updates.
+The phone-size journey also dispatches touch events over an album Play button
+under the hidden toolbar, checks that the target remains uncovered until release,
+and confirms one activation starts real silent playback. This protects event
+ordering; it does not establish native Safari gesture behavior.
 
 Writes timestamped screenshots, results.json, and failure screenshots/snapshots
 to `.audit-results/`. Exits nonzero on a failed assertion. Uses the isolated

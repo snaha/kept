@@ -11,7 +11,7 @@ import { reconcileBrowseOrder, orderedBrowseCollections } from './browse-view';
 import { browseCollections, registerBrowseSource } from './browse-source';
 import { isElementVisible } from './dom';
 import { startRuntime } from './runtime';
-import { ui } from './ui-style.svelte';
+import { ui, toolbar } from './ui-style.svelte'
 import { dig, coverRevision } from './discovery.svelte';
 import { artworkFocusScope, restoreFocusOnClose, wrapArtworkTab } from './artwork-focus';
 import DigPanel from './DigPanel.svelte';
@@ -751,6 +751,57 @@ describe('review regressions', () => {
       close.focus(); expect(document.activeElement).toBe(close);
     } finally { player.shortcutsOpen = false; bar.remove(); }
   });
+  for (const finish of ['tap', 'cancel'] as const) {
+    it(`keeps an idle album Play target uncovered through a touch ${finish}`, async () => {
+      const IDLE_TIMEOUT_MS = 2500
+      const ALBUM_COUNT = 40
+      session.api = api({ getAlbumList2: vi.fn(async () => ok({ albumList2: {
+        album: Array.from({ length: ALBUM_COUNT }, (_, index) => ({ id: String(index), name: `Album ${index}`, artist: 'Artist', songCount: 1 })),
+      } })) })
+      toolbar.mode = 'library'
+      toolbar.selecting = false
+      player.view = ''
+      render(App)
+      await vi.waitFor(() => expect(document.querySelector('.tile-play button')).toBeTruthy())
+      const button = document.querySelector<HTMLButtonElement>('.tile-play button')!
+      const browse = document.querySelector<HTMLElement>('.browse')!
+      const scroller = document.querySelector<HTMLElement>('.scroll')!
+      button.focus()
+      button.dispatchEvent(new TouchEvent('touchstart', { bubbles: true }))
+      await tick()
+      const targetY = browse.getBoundingClientRect().height / 2
+      scroller.scrollTop += button.getBoundingClientRect().top + button.offsetHeight / 2 - targetY
+      await new Promise(requestAnimationFrame)
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      try {
+        window.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse' }))
+        await vi.advanceTimersByTimeAsync(IDLE_TIMEOUT_MS + 1)
+        await tick()
+        expect(browse.classList.contains('hidden')).toBe(true)
+        const bounds = button.getBoundingClientRect()
+        const point = { clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 }
+        expect(button.contains(document.elementFromPoint(point.clientX, point.clientY))).toBe(true)
+        const pointer = (type: string) => new PointerEvent(type, { ...point, bubbles: true, pointerType: 'touch', pointerId: 1, isPrimary: true })
+        button.dispatchEvent(pointer('pointerdown'))
+        button.dispatchEvent(pointer('pointermove'))
+        await tick()
+        expect(browse.classList.contains('hidden')).toBe(true)
+        expect(button.contains(document.elementFromPoint(point.clientX, point.clientY))).toBe(true)
+        expect(player.queue).toHaveLength(0)
+        button.dispatchEvent(pointer(finish === 'tap' ? 'pointerup' : 'pointercancel'))
+        if (finish === 'tap') {
+          button.click()
+          await vi.waitFor(() => expect(player.playing).toBe(true))
+          expect(player.queue).toHaveLength(1)
+          expect(browse.classList.contains('hidden')).toBe(false)
+        } else {
+          await tick()
+          expect(player.queue).toHaveLength(0)
+          expect(browse.classList.contains('hidden')).toBe(true)
+        }
+      } finally { cleanup(); vi.useRealTimers() }
+    })
+  }
   for (const [shortcut, init] of [['/', {}], ['k', { ctrlKey: true }]] as const) {
     it(`returns Escape from search opened with ${shortcut} in details to the opening tile`, async () => {
       session.api = api({ getAlbumList2: vi.fn(async () => ok({ albumList2: { album: [{ id: 'a', name: 'Album', artist: 'Artist', songCount: 1 }] } })) });

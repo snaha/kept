@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { appendFile, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
-import path from 'node:path';
+import path from 'node:path'
+import { macDownloadNotice } from './mac-distribution.mjs'
 
 const release = path.resolve(process.env.MUSIC_RELEASE_DIR || 'release');
 const preview = process.env.MUSIC_CHANNEL === 'preview';
@@ -21,7 +22,7 @@ for (const [index, file] of assets.entries()) {
 const checksums = await Promise.all(assets.map(async file => `${createHash('sha256').update(await readFile(path.join(release, file))).digest('hex')}  ${file}`));
 await writeFile(path.join(release, 'SHA256SUMS.txt'), checksums.join('\n') + '\n');
 assets.push('SHA256SUMS.txt');
-const notes = `## ${preview ? 'Music Preview' : 'Music'}
+const notes = `## ${preview ? 'Kept Preview' : 'Kept'}
 
 Commit: ${commit}
 Workflow: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}
@@ -29,11 +30,11 @@ Workflow: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${pro
 Choose the download matching your computer:
 - **Mac Apple Silicon:** ZIP/app or DMG. Intel Macs are not included.
 - **Linux x64 or arm64 (such as a Raspberry Pi with a 64-bit system):** AppImage or deb, when present.
-- **Portable:** extract the complete portable folder and use its Open Music launcher. Its Data folder keeps this build’s profiles separate.
+- **Portable:** extract the complete portable folder and use its Open Kept launcher. Its Data folder keeps this build’s profiles separate.
 
-Regular previews use their own profile outside the app. Fresh startup selects the Music folder; add custom folders and open your collection, or Explore first. To copy an existing Music profile, quit Music first. Files are scanned where they are; audio is not copied. Settings → Advanced shows the selected folders, active profile and build.
+Regular previews use their own profile outside the app. Fresh startup selects the Music folder; add custom folders and open your collection, or Explore first. To copy an existing Kept profile, quit Kept first. Files are scanned where they are; audio is not copied. Settings → Advanced shows the selected folders, active profile and build.
 
-${process.env.MUSIC_NOTARIZED === 'true' ? 'Mac builds use Developer ID signing and notarization.' : 'Mac builds are not notarized and may be blocked at first launch. See [Apple’s launch guidance](https://support.apple.com/en-us/102445).'}
+${process.env.MUSIC_MAC_INCLUDED === 'true' ? macDownloadNotice(process.env.MUSIC_NOTARIZED === 'true') : 'This release does not include Mac downloads.'}
 
 Profiles and personal credentials are not included in these downloads.
 `;
@@ -55,8 +56,8 @@ if (existing) {
   url = existing.url;
 } else {
   url = gh(['release', 'create', tag, ...assets.map(file => path.join(release, file)), '--target', commit,
-    '--title', preview ? `Music Preview · ${commit.slice(0, 7)}` : `Music ${tag}`, '--notes-file', notesFile,
+    '--title', preview ? `Kept Preview · ${commit.slice(0, 7)}` : `Kept ${tag}`, '--notes-file', notesFile,
     ...(preview ? ['--prerelease', '--latest=false'] : ['--verify-tag'])]);
 }
 console.log(url);
-if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `## Download\n\n[${preview ? 'Music Preview' : 'Music'}](${url})\n`);
+if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `## Download\n\n[${preview ? 'Kept Preview' : 'Kept'}](${url})\n`);

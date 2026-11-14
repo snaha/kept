@@ -26,6 +26,7 @@ async function fetchDevServer(target, tries = 50) { // Vite may still be startin
 }
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const build = readJSON(path.join(here, 'build-info.json'), { version: app.getVersion(), channel: 'stable', commit: '', branch: '', builtAt: '', runUrl: '' });
+app.setName(build.channel === 'preview' ? 'Kept Preview' : 'Kept')
 let profile, config, launchError = '', hasInstanceLock = false;
 try {
   profile = launchProfile({ argv: process.argv.slice(1), env: process.env, appData: app.getPath('appData'), channel: build.channel });
@@ -75,21 +76,57 @@ function lanIp() {
   return '127.0.0.1';
 }
 
-// serves the built frontend on the LAN so phones can open the share link; the window uses it too
+// HTTP frontend for sharing on the user's trusted home network or Tailscale.
 const MIME = { '.html': 'text/html', '.webmanifest': 'application/manifest+json', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.woff2': 'font/woff2' };
+const HTTP_OK = 200
+const HTTP_BAD_REQUEST = 400
+const HTTP_NOT_FOUND = 404
+const HTTP_SERVER_ERROR = 500
 function createFrontend() {
   return http.createServer((req, res) => {
-    const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    let file = path.join(dist, p === '/' ? 'index.html' : p);
-    if (!file.startsWith(dist) || !existsSync(file) || statSync(file).isDirectory()) file = path.join(dist, 'index.html');
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' });
-    createReadStream(file).pipe(res);
-  });
+    const fail = status => {
+      if (res.destroyed) return
+      if (res.headersSent) res.destroy()
+      else {
+        res.writeHead(status, { 'Content-Type': 'text/plain' })
+        res.end('Unable to serve this request')
+      }
+    }
+    let pathname
+    try {
+      pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname)
+      if (pathname.includes('\0') || pathname.includes('\\')) throw new Error('Invalid path')
+    } catch {
+      fail(HTTP_BAD_REQUEST)
+      return
+    }
+    try {
+      let file = path.resolve(dist, `.${pathname === '/' ? '/index.html' : pathname}`)
+      const relative = path.relative(dist, file)
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        fail(HTTP_NOT_FOUND)
+        return
+      }
+      if (!existsSync(file) || statSync(file).isDirectory()) file = path.join(dist, 'index.html')
+      const stream = createReadStream(file)
+      // Open failures and disconnects belong to this request, never the host process.
+      stream.once('error', () => fail(HTTP_SERVER_ERROR))
+      res.once('close', () => stream.destroy())
+      stream.once('open', () => {
+        if (res.destroyed) {
+          stream.destroy()
+          return
+        }
+        res.writeHead(HTTP_OK, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' })
+        stream.pipe(res)
+      })
+    } catch { fail(HTTP_SERVER_ERROR) }
+  })
 }
 
 async function waitFor(url, child) {
   for (let i = 0; i < 240; i++) {
-    if (child.exitCode !== null || child.signalCode !== null || !child.pid) throw new Error('The bundled music server could not start. Restart Music or try a fresh profile.');
+    if (child.exitCode !== null || child.signalCode !== null || !child.pid) throw new Error('The bundled music server could not start. Restart Kept or try a fresh profile.');
     try { if ((await net.fetch(url)).ok) return; } catch {}
     await new Promise((r) => setTimeout(r, 250));
   }
@@ -107,25 +144,25 @@ const desktopStatus = () => ({
   phase, error: startupError, warning: startupWarning, onboarding: !config.setupComplete,
   url: local, username: st?.username || '', password: st?.password || '', frame: st?.frame ?? true,
   share: st ? { webPort: st.webPort, port: st.port, password: st.sharePassword } : undefined,
-  build, profile: { name: profile.name, label: config.label || (profile.existing ? 'Music' : profile.name === 'default' ? 'Preview' : profile.name), directory: profile.directory, existing: profile.existing, portable: profile.portable },
+  build, profile: { name: profile.name, label: config.label || (profile.existing ? 'Kept' : profile.name === 'default' ? 'Preview' : profile.name), directory: profile.directory, existing: profile.existing, portable: profile.portable },
   musicFolder: config.musicFolder || '', musicFolders: profileMusicFolders(config),
   defaultMusicFolder: app.getPath('music'), defaultMusicFolderAvailable: existsSync(app.getPath('music')), source: config.source,
   canCopy: !profile.existing && existsSync(path.join(profile.existingDirectory, 'navidrome', 'credentials.json')),
 });
 const changed = () => { for (const win of BrowserWindow.getAllWindows()) win.webContents.send('desktop:changed', desktopStatus()); };
 const trusted = event => {
-  if (event.senderFrame !== event.sender.mainFrame || !isMusicDocument(event.senderFrame?.url)) throw new Error('This action is available only in Music.');
+  if (event.senderFrame !== event.sender.mainFrame || !isMusicDocument(event.senderFrame?.url)) throw new Error('This action is available only in Kept.');
 };
 
 app.whenReady().then(async () => {
-  if (launchError) { dialog.showErrorBox('Cannot open Music', launchError); app.quit(); return; }
+  if (launchError) { dialog.showErrorBox('Cannot open Kept', launchError); app.quit(); return; }
   if (!hasInstanceLock) { app.quit(); return; }
   Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }]) : null);
   protocol.handle('app', request => {
     const url = new URL(request.url);
     if (url.hostname !== 'music') return new Response('Not found', { status: 404 });
-    if (url.pathname === '/__music_starting') return new Response('<!doctype html><meta name=viewport content="width=device-width"><title>Music</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#18181b;color:#eee;font:16px system-ui}</style><p role=status>Opening your library…</p>', { headers: { 'content-type': 'text/html' } });
-    if (url.pathname === '/__music_storage_migration') return new Response('<!doctype html><title>Music storage migration</title>', { headers: { 'content-type': 'text/html' } });
+    if (url.pathname === '/__music_starting') return new Response('<!doctype html><meta name=viewport content="width=device-width"><title>Kept</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#18181b;color:#eee;font:16px system-ui}</style><p role=status>Opening your library…</p>', { headers: { 'content-type': 'text/html' } });
+    if (url.pathname === '/__music_storage_migration') return new Response('<!doctype html><title>Kept storage migration</title>', { headers: { 'content-type': 'text/html' } });
     if (devServer) return fetchDevServer(devServer + url.pathname + url.search);
     const file = path.resolve(dist, `.${decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)}`);
     if (path.relative(dist, file).startsWith('..') || !existsSync(file) || !statSync(file).isFile()) return new Response('Not found', { status: 404 });
@@ -146,7 +183,7 @@ app.whenReady().then(async () => {
   async function open(bounds, maximized, initializing = false) {
     const win = new BrowserWindow({
       width: 980, height: 760, minWidth: 360, minHeight: 560,
-      title: `${build.channel === 'preview' ? 'Music Preview' : 'Music'} · ${config.label || profile.name}`,
+      title: `${build.channel === 'preview' ? 'Kept Preview' : 'Kept'} · ${config.label || profile.name}`,
       frame: st?.frame ?? true, show: false, backgroundColor: '#18181b', ...bounds,
       webPreferences: { backgroundThrottling: false, preload: path.join(here, 'preload.bundle.cjs') },
     });
@@ -198,18 +235,18 @@ app.whenReady().then(async () => {
       let target;
       if (mode === 'existing') {
         const result = await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender), {
-          type: 'warning', message: 'Open your normal Music profile?', detail: 'Quit the other version first. This preview will write to your normal library data. A copied profile keeps those changes separate.', buttons: ['Cancel', 'Use existing profile'], defaultId: 0, cancelId: 0,
+          type: 'warning', message: 'Open your normal Kept profile?', detail: 'Quit the other version first. This preview will write to your normal library data. A copied profile keeps those changes separate.', buttons: ['Cancel', 'Use existing profile'], defaultId: 0, cancelId: 0,
         });
         if (result.response !== 1) return;
         scheduleRelaunch(['--use-existing']); return;
       }
       if (mode === 'fresh') target = newProfile(profile);
       else if (mode === 'copy') {
-        if (profile.existing) throw new Error('Open an isolated preview and quit Music before copying its profile.');
+        if (profile.existing) throw new Error('Open an isolated preview and quit Kept before copying its profile.');
         target = newProfile(profile, 'copy');
         const source = { ...profile, directory: profile.existingDirectory, existing: true, name: 'existing' };
         const credentials = readJSON(path.join(source.directory, 'navidrome', 'credentials.json'), {});
-        if ((credentials.port && !(await isFree(credentials.port))) || (credentials.webPort && !(await isFree(credentials.webPort)))) throw new Error('Quit Music before copying its profile, then try again.');
+        if ((credentials.port && !(await isFree(credentials.port))) || (credentials.webPort && !(await isFree(credentials.webPort)))) throw new Error('Quit Kept before copying its profile, then try again.');
         await copyProfile(source, target, app.getPath('music'));
       } else if (mode === 'continue') {
         target = selectedProfile(profile, name);
@@ -245,7 +282,7 @@ app.whenReady().then(async () => {
         // provide a conservative guard against opening its live databases.
         if (profile.existing) {
           const old = readJSON(path.join(dataDir, 'credentials.json'), {});
-          if ((old.port && !(await isFree(old.port))) || (old.webPort && !(await isFree(old.webPort)))) throw new Error('Another Music version is using this profile. Quit it before continuing.');
+          if ((old.port && !(await isFree(old.port))) || (old.webPort && !(await isFree(old.webPort)))) throw new Error('Another Kept version is using this profile. Quit it before continuing.');
         }
         config.combinedMusicFolders ||= folders.length > 1;
         const music = folders.length ? prepareMusicRoot(profile.directory, config.musicFolders, config.combinedMusicFolders) : path.join(profile.directory, 'empty-music');
@@ -257,7 +294,7 @@ app.whenReady().then(async () => {
         });
         navidrome = child;
         child.on('error', error => { if (navidrome !== child) return; startupError = `Cannot start the bundled music server: ${error.message}`; phase = 'error'; changed(); });
-        child.on('exit', (code, signal) => { if (navidrome === child && !app.isQuitting && phase === 'ready') { startupError = `The music server stopped (${signal || `exit ${code}`}). Restart Music to reconnect.`; phase = 'error'; changed(); } });
+        child.on('exit', (code, signal) => { if (navidrome === child && !app.isQuitting && phase === 'ready') { startupError = `The music server stopped (${signal || `exit ${code}`}). Restart Kept to reconnect.`; phase = 'error'; changed(); } });
         await waitFor(`${local}/rest/ping`, child);
         frontendServer = createFrontend();
         await listenFrontend(frontendServer, st.webPort);
@@ -293,12 +330,12 @@ app.whenReady().then(async () => {
   try { await migrateStorage(profile, config); }
   catch (error) {
     console.error('Storage migration:', error.message);
-    startupWarning = 'Some settings from an older version could not be imported. Your music is still available. Restart Music to retry the import.';
+    startupWarning = 'Some settings from an older version could not be imported. Your music is still available. Restart Kept to retry the import.';
   }
   await initialWindow.loadURL(page);
   bootstrapping = false;
   if (config.setupComplete) void start().catch(() => {});
-}).catch(error => { dialog.showErrorBox('Cannot open Music', error.message); app.quit(); });
+}).catch(error => { dialog.showErrorBox('Cannot open Kept', error.message); app.quit(); });
 
 let switchingProfile = false;
 function scheduleRelaunch(args) {
@@ -312,7 +349,7 @@ async function stopServices() {
   frontendServer = null;
   navidrome = null;
   const results = await Promise.allSettled([database?.close(), closeFrontend(server), stopMusicServer(child)]);
-  for (const result of results) if (result.status === 'rejected') console.error('Music cleanup:', result.reason);
+  for (const result of results) if (result.status === 'rejected') console.error('Kept cleanup:', result.reason);
 }
 
 let shutdownComplete = false, shuttingDown = false;

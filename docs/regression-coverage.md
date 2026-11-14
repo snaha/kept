@@ -34,7 +34,8 @@ Component cases below live in
 | Scan buttons hand control back before a poll has seen the scan, drop focus when disabled, lose their state or failure reason when Settings closes, or let a second start through after an account change | Component `keeps the scan buttons owned by a pending start`: ownership through an idle poll that began before the start, across a Settings remount, released by the first later poll or a failed start; focus stays on the button. New-account-before-poll and late old-account failure cases cover ownership; external indexing clears an obsolete start error. The new-account guard was mutation-checked | Fake timers and stubbed scan API; a real Navidrome scan with the library refreshing mid-scan is a native check |
 | Cover identity changes with session salt/port | Component `retains the cover fingerprint`: stable ID across salt/port, changed local ID/path and external URL invalidate | Identity assertions, not decode cost or real network request count |
 | Dig drag reranks per move or commits foreign/stale pointer | Component `previews a Dig drag` (marker vs global state, keyboard); `owns one Dig pointer` (foreign pointer ignored, cancel commits, unmount discards) | Real component/rAF in Chromium; physical touch/measured 60 fps separate |
-| Hot corner opens Queue and steals search focus | [agent/run.mjs](../frontend/tests/agent/run.mjs) corner-entry/active-input assertions | Manually run application journey, not CI; explicit button/keyboard opening retained |
+| Hot corner opens Queue and steals search focus | [agent/run.mjs](../frontend/tests/agent/run.mjs) corner-entry/active-input assertions | Required four-viewport journey in local validation and CI; explicit button/keyboard opening retained |
+| An idle toolbar returns under the finger and steals an album Play tap | Component `keeps an idle album Play target uncovered through a touch tap/cancel`: actual App, target hit testing before release, one playback action, canceled gesture leaves queue alone; phone-size agent journey repeats touch events with real silent media | Both component cases fail on the premature pointer-down wake. Touch events are simulated in Chromium; user confirmed first-tap playback on physical iPhone/Safari on 14 November 2026; automated touch events still do not certify every native gesture |
 | Artwork leaves library tabbable or fights nested focus | Component `isolates covered Grid containers` (new empty-library controls), `restores the artwork opener` (no scroll, competing focus, canceled mount), `restores playback focus` (removed/body opener), non-modal shortcuts leave library/details/Queue interactive; `real Settings modal` above actual Queue, Escape/restoration; agent search from details, per-Tab focus ownership, details → Queue → Escape fallback and visualizer shortcut above Queue | Chromium DOM; isolated Mac focus smoke exercised 15 October 2026, physical touch/performance remain separate |
 | Broken artwork blanks view, changed URL never retries, late error affects closed view | Component Queue/album placeholder, changed URL retry, `ignores late artwork errors` | Real DOM with dispatched errors, not live image-server outage |
 | Show in library destroys filters or a delayed jump steals the view after scrolling | Component `reveals the playing album from a matching search` checks visible destination/focus and restored query/Dig; `cancels a pending reveal` checks competing wheel input before the album response | Menu action and four-viewport navigation need the agent journey; no native Cmd-L claim |
@@ -43,6 +44,9 @@ Component cases below live in
 | Migration delays first window or failure bricks startup | [main.test.js](../desktop/main.test.js) success/failure barriers: visible bootstrap before pending import, warning/usable startup on failure | Actual main flow; OS windows/migration/child mocked, no paint timing claim |
 | Migration hangs/leaks hidden window or marks failure complete | [service-lifecycle.test.js](../desktop/service-lifecycle.test.js) hang/rejection/protocol failure, bounded cleanup and successful retry | Actual control flow, fake storage renderer; native transfer/partial-import precedence in runbook |
 | Retry leaks server/DB/child and changes share port | Main retry after child exit reuses real HTTP port, closes old DB and replaces history IPC owner; partial start/save failure cleanup | Real HTTP/credentials, mocked DB/child here; service tests cover real worker termination/listen collision |
+| Share exports an admin account or reuses another server/account's password | [sharing.svelte.test.ts](../frontend/src/lib/sharing.svelte.test.ts): cached/fresh admin collision, restricted creation/update, rejected/malformed responses, server/base-path/account isolation, desktop profile-password ownership, cancellation and supersession | Real browser storage with mocked native API; isolated Navidrome 0.64.2 verification covers creation, cached update/login and admin collision |
+| Home-network login, QR export or playback fails on HTTP | Sharing and [api-transport.svelte.test.ts](../frontend/src/lib/api-transport.svelte.test.ts): HTTP/HTTPS/Tailscale login, fragment/saved restoration, invalid URL rejection, profile ownership, QR notice and redirect refusal; main/service tests assert LAN binds; actual player test runs without randomUUID | HTTP exposure on trusted home networks explicitly accepted by the user on 14 November 2026, not remediated. Secure random bytes preserve credential/queue/history generation on HTTP. Physical-phone/audio checks remain separate |
+| Malformed LAN requests terminate the desktop or escape the frontend directory | [main.test.js](../desktop/main.test.js): malformed percent/UTF-8/NUL/backslash input, encoded sibling traversal, missing-file recovery and successful SPA routes | Real HTTP sockets and temp files through the main entrypoint; Electron and backend process mocked. Packaged-app/phone smoke remains separate |
 | Worker survives graceful-close failure | Service `database cleanup terminates its worker` checks thread/pending work | Real worker with injected close rejection |
 | IPC rejects safe query/hash or permits wrong document/subframe | Service trusted document URL cases; main invokes registered handler with safe navigation/wrong origin/different frame identity | URL helper and main wiring; mock Electron frames |
 | History walks large snapshots twice or worker accepts malformed content | [contracts.test.js](../desktop/contracts.test.js) envelope/query bounds versus full rejection; main handler forwards contents to worker; store rejects invalid batches | Validation responsibilities asserted; no UI-thread latency benchmark |
@@ -64,8 +68,8 @@ Component cases below live in
   toolchain/distribution choices are discussions, not runtime test failures.
   Review dense operations for readability without arbitrary size quotas.
 - Agent fixture contract tests validate their own fixture/bridge, not actual
-  Electron IPC or the complete app. CI runs unit, component and fixture-contract
-  suites; the full agent journey is separately run and screenshots need inspection.
+  Electron IPC or the complete app. CI and local app builds run the shared full validation gate, including the
+  four-viewport application journey; screenshots still need inspection.
 - The mac-only repository launcher now uses package metadata and a platform guard.
   Build/native launch checks suit this change; a negative source-string test would
   not establish that the bundle actually runs.
@@ -110,3 +114,30 @@ artifact paths. Pending native/audio/performance checks stay explicitly pending.
 - The integrated journey passes at 1920×1080, 1440×900, 1024×768 and 390×844, including Cover Flow End/Home navigation, bounded covers, saved grid scroll, and gloss toggling across layouts without changing paused playback.
 - Inspected gloss screenshots at desktop/tablet/phone sizes and the grid at laptop size. The highlight stays inside artwork; long titles, direct actions and the bottom playback bar remain readable. These are reviewed implementation artifacts, not replacement approved references.
 - Physical touch, real-device frame pacing and audible-output checks remain separate release gaps.
+
+### Standard build gate — 14 November 2026
+
+- [Build validation](testing.md) defines one required command for local app builds
+  and CI. Missing prerequisites and failed stages fail the build; a focused
+  single-viewport run cannot count as a full pass.
+- The existing four-viewport application journey now runs against the freshly
+  built desktop frontend with its own ephemeral fixture and browser session.
+  Logs, screenshots, source identity and pending manual checks accompany each run.
+- [Real Navidrome sharing](../desktop/tests/sharing-integration.test.mjs) promotes
+  the one-off check to maintained coverage: HTTP login, restricted user
+  creation/cached update/login, protected administrator collision (including
+  unchanged password), and no credential-bearing redirects, without randomUUID.
+- [Fixture lifecycle cases](../frontend/tests/agent/server.test.mjs) check the
+  selected build, readiness on a free loopback port and resource release on
+  SIGTERM or parent disconnect. The production app and user profile are not used.
+- Remaining boundaries: real phone QR/touch/audible playback, native chooser and
+  packaged startup, external Tailscale routing, measured frame pacing and visual
+  reference approval. Repeatable steps and expected results are in testing.md;
+  an automated pass leaves these pending until actually exercised.
+
+### Kept packaging and Mac verification — 14 November 2026
+
+- `desktop/mac-distribution.test.js` covers stable/preview branding with unchanged bundle IDs, complete authentication methods, rejection of missing/partial credentials and stopping on signature, staple or Gatekeeper failures. The packaging entrypoint rejects missing credentials for stable releases; previews without credentials retain signature checks and explicit notices.
+- Profile tests retain the original Music directories and existing data. The Linux portable test launches the renamed app through Open Kept and preserves its Data folder across updates.
+- All Mac downloads require `codesign` success. Notarized builds additionally require `stapler` and `spctl` success before installer/portable packaging. Local development bundles remain ad-hoc and are explicitly excluded from distribution.
+- Native gap: a signed/notarized download and quarantined Finder launch remain pending until Apple credentials are configured. Repeatable setup and expected results are in [desktop distribution](../desktop/README.md#macos). Existing unsigned Music Preview artifacts do not establish this result.

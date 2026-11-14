@@ -26,6 +26,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
   };
   state.migration = new Promise(resolve => { state.finishMigration = resolve; });
   Object.assign(state.app, {
+    setName(name) { state.appName = name },
     getVersion: () => 'test', getPath: name => name === 'music' ? path.join(directory, 'Music') : directory,
     setPath() {}, requestSingleInstanceLock: () => true, whenReady: async () => {}, isReady: () => true,
     quit() {
@@ -91,11 +92,12 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
     `,
     child: `${access}
       import { EventEmitter } from 'node:events';
-      export function spawn() {
+      export function spawn(_file, _args, options) {
         const child = new EventEmitter();
         Object.assign(child, { pid: 100 + state.children.length, exitCode: null, signalCode: null,
           kill() { this.exitCode = 0; this.emit('close'); return true; },
         });
+        child.options = options
         state.children.push(child);
         return child;
       }

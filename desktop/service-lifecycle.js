@@ -29,6 +29,6 @@ export function listenFrontend(server, port) {
     const ready = () => { server.removeListener('error', failed); resolve(); };
     server.once('error', failed);
     server.once('listening', ready);
-    server.listen(port, '0.0.0.0');
+    server.listen(port, '0.0.0.0')
   });
 }
