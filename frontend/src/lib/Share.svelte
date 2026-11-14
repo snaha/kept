@@ -1,23 +1,39 @@
 <script lang="ts">
   import QRCode from 'qrcode';
+  import { onDestroy } from 'svelte'
   import Drawer from './Drawer.svelte';
   import { shareLink } from './sharing.svelte';
 
   let { onclose, from = 'bottom' }: { onclose: () => void; from?: 'bottom' | 'right' } = $props();
   let qr = $state(''), error = $state('');
-  shareLink()
-    .then(async (l) => { qr = await QRCode.toDataURL(l, { width: 640, margin: 1, color: { dark: '#eeeeee', light: '#141414' } }); })
-    .catch((e) => (error = (e as Error).message));
+  let localHttp = $state(false)
+  const controller = new AbortController()
+  const QR_WIDTH = 640
+  onDestroy(() => controller.abort())
+  shareLink(controller.signal)
+    .then(async link => {
+      const image = await QRCode.toDataURL(link, { width: QR_WIDTH, margin: 1, color: { dark: '#eeeeee', light: '#141414' } })
+      if (!controller.signal.aborted) {
+        const url = new URL(link)
+        const server = new URL(new URLSearchParams(url.hash.slice(1)).get('s')!)
+        localHttp = url.protocol === 'http:' || server.protocol === 'http:'
+        qr = image
+      }
+    })
+    .catch((cause: unknown) => {
+      if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'Sharing failed. Try again.'
+    })
 </script>
 
 <Drawer {from} {onclose}>
   <div class="body" class:right={from === 'right'}>
     {#if qr}
       <img class="qr" src={qr} alt="QR code to open this library" />
-      <p class="lead">scan with a phone on the same network</p>
+      <p class="lead">scan with a phone to open this library</p>
       <p class="note">the code includes the share account, keep it to people you trust</p>
+      {#if localHttp}<p class="note">Use a trusted home network or Tailscale. HTTP is not encrypted on ordinary Wi-Fi.</p>{/if}
     {:else if error}
-      <p class="note">{error}</p>
+      <p class="note" role="alert">{error}</p>
     {/if}
   </div>
 </Drawer>

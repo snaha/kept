@@ -52,6 +52,7 @@ jobs:
           JS
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -63,10 +64,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
       - run: pnpm --dir frontend exec playwright install --with-deps chromium
-      - run: pnpm --dir frontend test:unit
-      - run: pnpm --dir frontend check
-      - run: pnpm --dir desktop test
-      - run: pnpm --dir frontend audit:test
+      - run: pnpm --dir desktop validate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-${{ env.MUSIC_COMMIT }}
+          include-hidden-files: true
+          if-no-files-found: error
+          path: .audit-results/
   mac:
     needs: [prepare, checks]
     if: needs.prepare.outputs.mac == 'true'
@@ -90,7 +95,8 @@ jobs:
         working-directory: frontend
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
-      - run: pnpm dist:mac
+      # The required checks job ran the complete validation for this checkout.
+      - run: pnpm dist:mac:package
         working-directory: desktop
       - uses: actions/upload-artifact@v4
         with:
@@ -121,7 +127,8 @@ jobs:
         working-directory: frontend
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
-      - run: pnpm dist
+      # The required checks job ran the complete validation for this checkout.
+      - run: pnpm dist:package
         working-directory: desktop
       - uses: actions/upload-artifact@v4
         with:

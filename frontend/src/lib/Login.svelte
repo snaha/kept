@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { login } from './api.svelte';
+  import { login, session } from './api.svelte'
   let url = $state('http://localhost:4533'), username = $state(''), password = $state(''), error = $state('');
   async function submit(e: SubmitEvent) {
     e.preventDefault(); error = '';
@@ -11,7 +11,7 @@
   <input bind:value={url} placeholder="Navidrome URL" />
   <input bind:value={username} placeholder="Username" autocomplete="username" />
   <input bind:value={password} type="password" placeholder="Password" autocomplete="current-password" />
-  {#if error}<p>{error}</p>{/if}
+  {#if error || session.error}<p role="alert">{error || session.error}</p>{/if}
   <button>Enter</button>
 </form>
 

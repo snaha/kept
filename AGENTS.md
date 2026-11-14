@@ -83,6 +83,9 @@ control and feel good using it.
   and audio-capture checks as untested unless actually exercised.
 - For requested validation, also run `pnpm --dir frontend check`,
   `pnpm --dir desktop test` and `pnpm --dir desktop build:frontend` as applicable.
+  Candidate app builds require `pnpm --dir desktop validate`, including the full
+  four-viewport application journey. Focused tests do not replace this gate.
+  See `docs/testing.md` for setup, evidence and the remaining device checks.
   Stop temporary servers, close audit-created browser sessions and reset
   viewport overrides afterward.
 

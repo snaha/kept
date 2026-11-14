@@ -4,9 +4,9 @@ Electron shell that runs a bundled Navidrome in the background and shows the fro
 window with the OS's native frame (switchable to frameless under Settings → Advanced; the
 window is rebuilt, since a frame can't be added to an open one). Fresh startup selects your system Music folder and offers **Add music folder**, **Open my library**, and **Explore first**. It creates an admin account with a
 random password and logs the frontend in silently. Existing installations retain their library and preferences.
-Navidrome and a small static server for the frontend listen on all interfaces so
-phones on the LAN can open the share QR code; the only protection is the share account's password. Ports are
-chosen on first run and reused, so QR codes and bookmarks stay valid across restarts.
+Navidrome and the small static frontend server listen on the network so phones can use the Share QR code.
+Ports are chosen on first run and reused. HTTP is intended for trusted home networks or Tailscale;
+ordinary Wi-Fi traffic is unencrypted. See [phone sharing](../frontend/README.md#sharing).
 
     pnpm install            # Electron + electron-builder
     pnpm navidrome          # downloads the navidrome binary for this platform into bin/
@@ -35,7 +35,7 @@ Preview builds use the **Music Preview** application identity and an independent
 
 Each profile has a process lock and separate ports. Separate profiles can run together; two processes cannot write one profile.
 
-The desktop renderer uses the stable `app://music/` origin. On the first upgrade, its old localhost-origin preferences, tags, browser history and custom background are migrated inside the same Chromium profile before loading the library UI. A startup screen appears immediately; a failed or timed-out import shows a recoverable notice and retries on the next launch. LAN share links continue to use the HTTP frontend server.
+The desktop renderer uses the stable `app://music/` origin. On the first upgrade, its old localhost-origin preferences, tags, browser history and custom background are migrated inside the same Chromium profile before loading the library UI. A startup screen appears immediately; a failed or timed-out import shows a recoverable notice and retries on the next launch. The HTTP frontend serves phone connections on the home network and remains available for local storage migration.
 
 The **portable** archive contains the app, an empty `Data/` folder, a launcher and instructions. Extract everything to a writable directory and use **Open Music.command** on macOS or **Open Music.sh** on Linux. Opening the app directly uses the normal preview location instead of the adjacent Data folder. The Linux launcher uses AppImage extraction mode so FUSE is not required.
 
@@ -69,7 +69,7 @@ PR downloads use the existing **Music Preview** app identity and profile control
 gh workflow run desktop.yml --ref jose/core-library -f channel=preview -f platforms=mac -f publish=true
 ```
 
-Frontend checks, the desktop/frontend test suite, and the synthetic desktop-bridge contract test must pass before packaging. The browser regression runner remains a separate agent-driven check. Only selected platforms must succeed before publication. Stable releases still come from `v*` tags and build both platforms. Build metadata is visible in Settings and stamped into preview filenames. Rerunning publication can resume missing assets without replacing downloads already published for that commit/run.
+The shared `pnpm --dir desktop validate` gate must pass before packaging. It includes typechecks, component/desktop/fixture tests, real Navidrome sharing, production builds and the application journey at all four screen sizes. CI saves logs and screenshots on success or failure. See [build validation](../docs/testing.md) for setup, development shortcuts and the remaining device checks. Only selected platforms must succeed before publication. Stable releases still come from `v*` tags and build both platforms. Build metadata is visible in Settings and stamped into preview filenames. Rerunning publication can resume missing assets without replacing downloads already published for that commit/run.
 
 
 ### Music folders

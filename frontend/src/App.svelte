@@ -36,7 +36,9 @@
     if (status?.phase === 'ready' && !status.onboarding && !attempted) untrack(connectDesktop);
   });
 
-  // any pointer activity (mouse move, tap, touch scroll) shows the bars; they fade again after a pause
+  // Touch must finish activating its target before returning chrome can cover it.
+  // A canceled touch/scroll does not wake chrome; scrolling to the top still reveals it in Grid.
+  function wakeFromPointer(event: PointerEvent) { if (event.pointerType !== 'touch') wake() }
   function wake() { idle = false; player.topHidden = false; clearTimeout(idleTimer); idleTimer = setTimeout(() => (idle = true), 2500); }
 
   function focusHelp(node: HTMLButtonElement) {
@@ -108,7 +110,7 @@
     <button onclick={() => { dismissedStartupWarning = desktop.status?.warning || ''; }}>Dismiss</button>
   </div>
 {/if}
-<svelte:window onkeydown={onkeydown} onpointermove={wake} onpointerdown={wake} />
+<svelte:window onkeydown={onkeydown} onpointermove={wakeFromPointer} onpointerdown={wakeFromPointer} onclick={wake} />
 
 {#if window.desktop && (!ready || desktop.status?.phase !== 'ready' || desktop.status?.onboarding)}
   <Startup onretry={connectDesktop} />

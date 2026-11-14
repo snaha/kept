@@ -1,8 +1,8 @@
 # Music
 
 A music player for the collection you already have on your computer. Your albums show up as a wall of covers:
-click one to play it, or let the app pick for you. Phones on the same Wi-Fi can join in by scanning a QR code
-and play from your library too.
+click one to play it, or let the app pick for you. Phones on your home network can join in by
+scanning a QR code and play from your library too.
 
 Nothing to set up. The app reads the music in your system's Music folder and keeps its index up to date on its
 own. Under the hood it runs [Navidrome](https://www.navidrome.org/), a music server, which the app starts and
@@ -73,8 +73,8 @@ sudo apt install ./music-desktop_*_amd64.deb
 - Fresh startup selects your Music folder and offers **Add music folder**, **Open my library**, or **Explore first**. Added folders are scanned alongside the default folder without moving audio files. Existing installations keep their current library.
 - It reads your whole collection the first time. Albums appear while it works, and a counter at the bottom
   shows how many songs it has found. Large collections can take several minutes.
-- To play on a phone, open the menu in the bottom-right corner, choose **Share**, and scan the QR code with a
-  phone on the same Wi-Fi.
+- To play on a phone, choose **Share** on the desktop and scan the QR code with a phone on the same
+  home network. HTTP sharing is unencrypted on ordinary Wi-Fi; use a trusted network or Tailscale.
 - Ctrl+Q quits the app, or Cmd+Q on macOS.
 
 ## Preview builds
@@ -106,9 +106,10 @@ appearing. Afterwards, check that the files are inside your system's Music folde
 New files are picked up automatically within an hour.
 
 **A phone can't open the shared link.**
-The phone and the computer must be on the same network. Guest Wi-Fi networks often keep devices apart. If
-your computer has a firewall, allow Music to accept incoming connections. If you switched networks, open
-Share again to get a fresh QR code.
+Keep Music running and connect both devices to the same network. Guest Wi-Fi may isolate devices.
+Allow incoming connections to Music in the Mac firewall. If the Mac changes networks, reopen Share to
+get its current address. Tailscale users can connect using the Mac's Tailscale address; see
+[phone sharing](frontend/README.md#sharing).
 
 **"Navidrome stopped" appears on start.**
 Another copy of the app may still be running. Quit every copy, on macOS also from the Dock, and start it
@@ -136,3 +137,6 @@ the new code.
 
 See [desktop/README.md](desktop/README.md) for the desktop app and [frontend/README.md](frontend/README.md)
 for the web frontend.
+
+Run `pnpm --dir desktop validate` for the complete automated build gate, including
+the application journey. See [testing](docs/testing.md) for setup and device checks.

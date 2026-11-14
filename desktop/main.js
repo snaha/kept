@@ -75,16 +75,52 @@ function lanIp() {
   return '127.0.0.1';
 }
 
-// serves the built frontend on the LAN so phones can open the share link; the window uses it too
+// HTTP frontend for sharing on the user's trusted home network or Tailscale.
 const MIME = { '.html': 'text/html', '.webmanifest': 'application/manifest+json', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.woff2': 'font/woff2' };
+const HTTP_OK = 200
+const HTTP_BAD_REQUEST = 400
+const HTTP_NOT_FOUND = 404
+const HTTP_SERVER_ERROR = 500
 function createFrontend() {
   return http.createServer((req, res) => {
-    const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    let file = path.join(dist, p === '/' ? 'index.html' : p);
-    if (!file.startsWith(dist) || !existsSync(file) || statSync(file).isDirectory()) file = path.join(dist, 'index.html');
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' });
-    createReadStream(file).pipe(res);
-  });
+    const fail = status => {
+      if (res.destroyed) return
+      if (res.headersSent) res.destroy()
+      else {
+        res.writeHead(status, { 'Content-Type': 'text/plain' })
+        res.end('Unable to serve this request')
+      }
+    }
+    let pathname
+    try {
+      pathname = decodeURIComponent(new URL(req.url, 'http://x').pathname)
+      if (pathname.includes('\0') || pathname.includes('\\')) throw new Error('Invalid path')
+    } catch {
+      fail(HTTP_BAD_REQUEST)
+      return
+    }
+    try {
+      let file = path.resolve(dist, `.${pathname === '/' ? '/index.html' : pathname}`)
+      const relative = path.relative(dist, file)
+      if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        fail(HTTP_NOT_FOUND)
+        return
+      }
+      if (!existsSync(file) || statSync(file).isDirectory()) file = path.join(dist, 'index.html')
+      const stream = createReadStream(file)
+      // Open failures and disconnects belong to this request, never the host process.
+      stream.once('error', () => fail(HTTP_SERVER_ERROR))
+      res.once('close', () => stream.destroy())
+      stream.once('open', () => {
+        if (res.destroyed) {
+          stream.destroy()
+          return
+        }
+        res.writeHead(HTTP_OK, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' })
+        stream.pipe(res)
+      })
+    } catch { fail(HTTP_SERVER_ERROR) }
+  })
 }
 
 async function waitFor(url, child) {
