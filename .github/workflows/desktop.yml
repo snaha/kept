@@ -76,9 +76,12 @@ jobs:
     needs: [prepare, checks]
     if: needs.prepare.outputs.mac == 'true'
     runs-on: macos-15 # Apple Silicon
+    outputs:
+      notarized: ${{ steps.package.outputs.notarized }}
     env:
       MUSIC_CHANNEL: ${{ needs.prepare.outputs.channel }}
-      # electron-builder skips all signing on pull requests, including ad-hoc, without this
+      # Only same-repository PRs can access signing credentials; fork previews are explicitly unnotarized.
+      # electron-builder otherwise skips signing on pull requests.
       CSC_FOR_PULL_REQUEST: 'true'
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -87,6 +90,7 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
+      - run: node desktop/scripts/check-mac-distribution.mjs
       - uses: pnpm/action-setup@v4
         with: { version: 11.5.1 }
       - uses: actions/setup-node@v4
@@ -96,11 +100,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: desktop
       # The required checks job ran the complete validation for this checkout.
-      - run: pnpm dist:mac:package
+      - id: package
         working-directory: desktop
+        run: |
+          pnpm dist:mac:package
+          node --input-type=module <<'JS'
+          import { appendFileSync, readFileSync } from 'node:fs'
+          import { macNotarizationRequired } from './scripts/mac-distribution.mjs'
+          const info = JSON.parse(readFileSync('build-info.json', 'utf8'))
+          appendFileSync(process.env.GITHUB_OUTPUT, `notarized=${macNotarizationRequired(info)}\n`)
+          JS
       - uses: actions/upload-artifact@v4
         with:
-          name: Music-mac-arm64-${{ env.MUSIC_COMMIT }}
+          name: Kept-mac-arm64-${{ steps.package.outputs.notarized == 'true' && 'notarized' || 'not-notarized' }}-${{ env.MUSIC_COMMIT }}
           if-no-files-found: error
           path: |
             desktop/release/*.dmg
@@ -132,7 +144,7 @@ jobs:
         working-directory: desktop
       - uses: actions/upload-artifact@v4
         with:
-          name: Music-linux-${{ matrix.arch }}-${{ env.MUSIC_COMMIT }}
+          name: Kept-linux-${{ matrix.arch }}-${{ env.MUSIC_COMMIT }}
           if-no-files-found: error
           path: |
             desktop/release/*.AppImage
@@ -156,13 +168,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - uses: actions/download-artifact@v4
-        with: { path: release, pattern: 'Music-*', merge-multiple: true }
+        with: { path: release, pattern: 'Kept-*', merge-multiple: true }
       - run: node desktop/scripts/publish-release.mjs
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           MUSIC_CHANNEL: ${{ needs.prepare.outputs.channel }}
-          MUSIC_NOTARIZED: ${{ secrets.CSC_LINK != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
+          MUSIC_MAC_INCLUDED: ${{ needs.mac.result == 'success' }}
+          MUSIC_NOTARIZED: ${{ needs.mac.outputs.notarized }}
   # a PR build keeps one comment on the PR pointing at the run's artifacts, so previews stay off the releases page
   preview:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository   # fork PRs get a read-only token
@@ -176,11 +189,17 @@ jobs:
       PR: ${{ github.event.number }}
       SHA: ${{ github.event.pull_request.head.sha }}
       RUN: ${{ github.run_id }}
+      MAC_NOTARIZED: ${{ needs.mac.outputs.notarized }}
     steps:
       - run: |
           {
             echo "### Preview build for ${SHA::7}"
-            echo "Installs as **Music Preview** next to the regular app. Use Fresh or a portable folder for independent state. Builds are unsigned: on a Mac, right-click the app and choose Open the first time. Downloads need a GitHub login and expire after 90 days."
+            echo "Installs as **Kept Preview** next to the regular app. Use Fresh or a portable folder for independent state. Downloads need a GitHub login and expire after 90 days."
+            if [ "$MAC_NOTARIZED" = true ]; then
+              echo "Mac app: Developer ID signed, notarized by Apple and verified with Gatekeeper."
+            else
+              echo "**Mac preview: NOT NOTARIZED — Open Anyway required.** After opening the installed Kept Preview once and dismissing the warning, go to **System Settings → Privacy & Security → Open Anyway** and confirm. Only approve a build you trust. [Apple’s instructions](https://support.apple.com/en-us/102445)."
+            fi
             echo
             gh api "repos/$GH_REPO/actions/runs/$RUN/artifacts" -q ".artifacts[] | \"- [\(.name)](https://github.com/$GH_REPO/actions/runs/$RUN/artifacts/\(.id))\""
           } > comment.md

@@ -1,0 +1,15 @@
+KEPT PREVIEW — NOT NOTARIZED
+
+This preview has not been notarized by Apple. macOS will display
+"Apple could not verify" on first launch. Open Anyway is required.
+
+1. Drag Kept Preview to Applications.
+2. Open Kept Preview from Applications, then dismiss the warning.
+3. Open System Settings → Privacy & Security.
+4. Choose Open Anyway for Kept Preview and confirm.
+
+Only approve a build you trust. Do not disable Gatekeeper globally.
+Apple's instructions: https://support.apple.com/en-us/102445
+
+The preview uses separate data from the regular Kept app.
+Existing Music Preview data is retained after the rename.

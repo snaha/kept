@@ -34,7 +34,7 @@
   <section class="profile-settings" aria-labelledby="profile-title">
     <h2 id="profile-title">Library &amp; profile</h2>
     <dl>
-      <div><dt>Profile</dt><dd>{status.profile.label}{status.profile.existing ? ' · Existing Music data' : ' · Isolated data'}</dd></div>
+      <div><dt>Profile</dt><dd>{status.profile.label}{status.profile.existing ? ' · Existing Kept data' : ' · Isolated data'}</dd></div>
       <div><dt>Music folders</dt><dd>{#each status.musicFolders as path (path)}<div class="folder-row"><span>{path}</span><Button variant="ghost" size="sm" disabled={!!busy} aria-label="Remove {path}" onclick={() => folder('remove', path)}>Remove</Button></div>{:else}No folders selected{/each}</dd></div>
       <div><dt>Build</dt><dd>{status.build.version}{#if status.build.commit} · {status.build.commit.slice(0, 7)}{/if}{#if status.build.branch} · {status.build.branch}{/if}{#if status.build.dirty} · local changes{/if}</dd></div>
       <div><dt>Data folder</dt><dd>{status.profile.directory}</dd></div>
@@ -52,7 +52,7 @@
     <p class="scan-status" class:error={scanFailed} role={scanFailed ? 'alert' : 'status'}>{scanStatus}</p>
     <details>
       <summary>Preview profiles</summary>
-      <p>A fresh profile starts with setup. Copying keeps your normal Music data separate. Switching profiles restarts the app.</p>
+      <p>A fresh profile starts with setup. Copying keeps your normal Kept data separate. Switching profiles restarts the app.</p>
       <div class="actions">
         <Button variant="outline" disabled={!!busy} onclick={() => change('fresh')}>New fresh profile</Button>
         {#if status.canCopy}<Button variant="outline" disabled={!!busy} onclick={() => change('copy')}>{busy === 'copy' ? 'Copying profile…' : 'Copy existing profile'}</Button>{/if}
@@ -65,7 +65,7 @@
       {/if}
       {#if !status.profile.existing}
         <details class="advanced-profile">
-          <summary>Use normal Music data directly</summary>
+          <summary>Use normal Kept data directly</summary>
           <p>This writes to your normal profile. Quit other versions first. Older builds may not understand data changed by a preview.</p>
           <Button variant="outline" disabled={!!busy} onclick={() => change('existing')}>Use existing profile</Button>
         </details>

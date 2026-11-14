@@ -26,6 +26,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
   };
   state.migration = new Promise(resolve => { state.finishMigration = resolve; });
   Object.assign(state.app, {
+    setName(name) { state.appName = name },
     getVersion: () => 'test', getPath: name => name === 'music' ? path.join(directory, 'Music') : directory,
     setPath() {}, requestSingleInstanceLock: () => true, whenReady: async () => {}, isReady: () => true,
     quit() {

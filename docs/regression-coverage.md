@@ -134,3 +134,10 @@ artifact paths. Pending native/audio/performance checks stay explicitly pending.
   packaged startup, external Tailscale routing, measured frame pacing and visual
   reference approval. Repeatable steps and expected results are in testing.md;
   an automated pass leaves these pending until actually exercised.
+
+### Kept packaging and Mac verification — 14 November 2026
+
+- `desktop/mac-distribution.test.js` covers stable/preview branding with unchanged bundle IDs, complete authentication methods, rejection of missing/partial credentials and stopping on signature, staple or Gatekeeper failures. The packaging entrypoint rejects missing credentials for stable releases; previews without credentials retain signature checks and explicit notices.
+- Profile tests retain the original Music directories and existing data. The Linux portable test launches the renamed app through Open Kept and preserves its Data folder across updates.
+- All Mac downloads require `codesign` success. Notarized builds additionally require `stapler` and `spctl` success before installer/portable packaging. Local development bundles remain ad-hoc and are explicitly excluded from distribution.
+- Native gap: a signed/notarized download and quarantined Finder launch remain pending until Apple credentials are configured. Repeatable setup and expected results are in [desktop distribution](../desktop/README.md#macos). Existing unsigned Music Preview artifacts do not establish this result.

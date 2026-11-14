@@ -53,6 +53,7 @@ for (const migrationError of [undefined, new Error('fixture import unavailable')
     try {
       assert.deepEqual(state.trace.at(-1), ['migrate', true], 'a visible window exists while import is pending');
       assert.equal(state.windows[0].url, 'app://music/__music_starting');
+      assert.equal(state.appName, 'Kept')
       state.finishMigration();
       await until(() => state.windows[0].url === 'app://music/', 'Library document did not load after migration');
       const { value: status } = await state.invoke('status');
@@ -109,9 +110,9 @@ test('main cleans up a partially completed start and trusted IPC rejects subfram
     assert.equal(ready.share.webPort, saved.webPort);
     const status = state.handlers.get('desktop:status');
     assert.equal((await status(state.event('app://music/?view=queue#history'))).value.phase, 'ready');
-    await assert.rejects(status(state.event('https://music/')), /only in Music/);
+    await assert.rejects(status(state.event('https://music/')), /only in Kept/);
     const subframe = state.event();
     subframe.senderFrame = { url: 'app://music/' };
-    await assert.rejects(status(subframe), /only in Music/);
+    await assert.rejects(status(subframe), /only in Kept/);
   } finally { await dispose(); }
 });
