@@ -46,11 +46,25 @@ and plays are scrobbled to Navidrome after half the track.
 
 ## Sharing
 
-Admins see a share icon in the bottom bar. It opens an overlay with a QR code; a phone on the same network
-scans it and the app opens logged in as a separate non-admin `share` user (created on first use). The link
-carries the account in the URL fragment (`#u=share&p=…&s=<server>`), so anyone holding it keeps access until
-the share user's password is changed. Navidrome has no Subsonic endpoints for user management, so the share
-user is managed through Navidrome's native `/api/user` endpoint with a token from `/auth/login`.
+Admins see a share icon in the bottom bar. Open it on the desktop and scan the QR code with a phone
+on the same home network. The phone opens its own player using a separate non-admin `share` account
+(created on first use). An existing administrator named `share` is rejected.
+
+HTTP is supported for trusted home networks and Tailscale. HTTP traffic on ordinary Wi-Fi is not
+encrypted; this is an accepted local-use tradeoff, shown in the Share panel. Do not expose these HTTP
+ports to the public internet. Tailscale encrypts traffic between its connected devices. To use a
+Tailscale address instead of the LAN address, open the frontend at the desktop's Tailscale IP and
+frontend port, using the corresponding Tailscale IP and Navidrome port as the server URL.
+
+The link carries credentials in its fragment (`#u=share&p=…&s=<server>`), so keep it to people you trust.
+It remains usable until the share account's password changes. The phone's queue and playback are
+independent of the Mac; remote control of the Mac's player is not implemented.
+
+Browser sharing passwords belong to the server URL (including base path) and managing account.
+The desktop's password stays in its own profile and is not copied into browser preferences. Native
+user management uses `/api/user` with a token from `/auth/login`; authenticated API redirects are
+rejected, so configure the final server URL. HTTPS deployments remain supported without rewriting
+certificate hostnames. No certificate installation, hosted service or HTTPS proxy is required for LAN use.
 
 ## Visualizer
 
@@ -68,6 +82,10 @@ or leaving full screen. While it is open it owns the keyboard, so `space` does n
 | `Esc` | close |
 
 ## Component tests and browser support
+
+Run `pnpm --dir desktop validate` from the repository root for the complete build
+gate, including application journeys. See [testing](../docs/testing.md) for setup,
+saved evidence and device checks. The commands below are focused development checks.
 
 Run `pnpm test:unit` for browser component/rune regressions using the same Svelte
 Vite plugin as production. Use `pnpm exec playwright install chromium` once if the

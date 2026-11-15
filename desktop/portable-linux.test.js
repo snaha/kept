@@ -14,13 +14,13 @@ test('Linux portable updates keep the launcher and data while starting the new a
     const marker = path.join(installed, 'Data', 'library.json');
     await writeFile(marker, 'existing library');
     for (const version of ['preview.1', 'preview.2']) {
-      await writeFile(path.join(release, `Music-${version}.AppImage`), `#!/bin/sh\nprintf '%s\\n' '${version}' "$APPIMAGE_EXTRACT_AND_RUN" "$@"\n`, { mode: 0o755 });
+      await writeFile(path.join(release, `Kept-${version}.AppImage`), `#!/bin/sh\nprintf '%s\\n' '${version}' "$APPIMAGE_EXTRACT_AND_RUN" "$@"\n`, { mode: 0o755 });
     }
     await stageLinuxPortable(release, installed, 'preview.1');
-    const launcher = path.join(installed, 'Open Music.sh');
+    const launcher = path.join(installed, 'Open Kept.sh');
     const originalLauncher = await readFile(launcher, 'utf8');
     await stageLinuxPortable(release, update, 'preview.2');
-    await cp(path.join(update, 'Music.AppImage'), path.join(installed, 'Music.AppImage'));
+    await cp(path.join(update, 'Kept.AppImage'), path.join(installed, 'Kept.AppImage'));
     assert.equal(await readFile(launcher, 'utf8'), originalLauncher);
     assert.equal(await readFile(marker, 'utf8'), 'existing library');
     const output = execFileSync(launcher, ['--profile', 'test profile'], { encoding: 'utf8' }).trim().split('\n');

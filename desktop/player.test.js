@@ -4,7 +4,11 @@ import { readFile } from 'node:fs/promises';
 import { build, transform } from 'esbuild';
 import { compileModule } from '../frontend/tests/runes-compiler.mjs';
 
-test('actual local player loads collections, controls audio, preserves queue occurrences and replays history', async () => {
+test('actual local player works without randomUUID: collections, audio, queue occurrences and history replay', async (t) => {
+  const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+  const getRandomValues = crypto.getRandomValues.bind(crypto)
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { getRandomValues } })
+  t.after(() => Object.defineProperty(globalThis, 'crypto', originalCrypto))
   const output = await build({
     stdin: { contents: `export * from './src/lib/player.svelte.ts'; export { listeningHistory, clearHistory, loadHistory } from './src/lib/listening-history.svelte.ts'; export { session } from './src/lib/api.svelte.ts'; export { library, setMode, pick, addCollection } from './src/lib/library.svelte.ts';`, resolveDir: new URL('../frontend/', import.meta.url).pathname, loader: 'ts' },
     bundle: true, write: false, platform: 'node', format: 'esm', conditions: ['browser'],

@@ -55,27 +55,27 @@
 <main class="startup" aria-labelledby="startup-title">
   <div class="startup-body">
     <header class="identity">
-      <span>{status?.build.channel === 'preview' ? 'Music Preview' : 'Music'}</span>
+      <span>{status?.build.channel === 'preview' ? 'Kept Preview' : 'Kept'}</span>
       {#if status?.build.commit}<span class="build">{status.build.commit.slice(0, 7)}</span>{/if}
     </header>
     {#if starting}
       <section class="starting" aria-live="polite" aria-busy="true">
         <svg class="record" viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="36"/><circle cx="40" cy="40" r="28"/><circle cx="40" cy="40" r="20"/><circle cx="40" cy="40" r="7"/><path d="M40 4v12M40 64v12"/></svg>
         <h1 id="startup-title">Opening your library…</h1>
-        <p>Music starts here. Your collection will fill in as it’s indexed.</p>
-        <Button variant="ghost" onclick={() => window.close()}>Close Music</Button>
+        <p>Kept starts here. Your collection will fill in as it’s indexed.</p>
+        <Button variant="ghost" onclick={() => window.close()}>Close Kept</Button>
       </section>
     {:else if status?.phase === 'error' && !status.onboarding}
       <h1 id="startup-title">Reconnect your library.</h1>
-      <p class="intro">Restart Music to reopen this profile.</p>
-      <div class="finish"><Button onclick={() => window.desktop!.restart()}>Restart Music</Button></div>
+      <p class="intro">Restart Kept to reopen this profile.</p>
+      <div class="finish"><Button onclick={() => window.desktop!.restart()}>Restart Kept</Button></div>
     {:else if status?.phase === 'ready' && status.onboarding}
       <h1 id="startup-title">Open your collection.</h1>
       <p class="intro">Your collection is ready to open.</p>
       <div class="finish"><Button disabled={!!busy} onclick={finish}>Open my library</Button></div>
     {:else if status?.phase === 'ready' && !status.onboarding}
       <h1 id="startup-title">Your library is ready.</h1>
-      <p class="intro">{problem ? 'Music couldn’t open the library view. Try connecting again.' : 'Opening your collection…'}</p>
+      <p class="intro">{problem ? 'Kept couldn’t open the library view. Try connecting again.' : 'Opening your collection…'}</p>
       {#if problem}<Button onclick={onretry}>Retry opening library</Button>{/if}
     {:else}
       <h1 id="startup-title">Start with your music.</h1>
@@ -96,13 +96,13 @@
         </ul>
         {#if !folders.length}<p class="no-folders">Choose a folder containing your audio files to get started.</p>{/if}
         <Button variant="outline" disabled={!!busy || !status} onclick={chooseFolder}><Icon name="plus" />{busy === 'folder' ? 'Choosing folder…' : 'Add music folder'}</Button>
-        <p class="folder-note">Files stay where they are. Music includes subfolders, too.</p>
+        <p class="folder-note">Files stay where they are. Kept includes subfolders, too.</p>
       </section>
       <div class="finish"><Button disabled={!!busy || !status || !folders.length} onclick={() => start('folder')}>Open my library</Button><span>Albums appear as your music is indexed.</span></div>
       <footer><Button variant="ghost" disabled={!!busy || !status} onclick={() => start('empty')}>Explore first</Button><span>You can add music folders in Settings.</span></footer>
       {#if status?.canCopy}
         <section class="existing">
-          <div><h2>Already using Music?</h2><p>Quit the other version, then copy its library, history and preferences into this preview.</p></div>
+          <div><h2>Already using Kept?</h2><p>Quit the other version, then copy its library, history and preferences into this preview.</p></div>
           <Button variant="outline" disabled={!!busy} onclick={() => switchProfile('copy')}>{busy === 'copy' ? 'Copying profile…' : 'Copy existing profile'}</Button>
         </section>
       {/if}

@@ -1,10 +1,12 @@
 import { readJsonPreference, readPreference, writePreference } from './preferences';
 import { SubsonicAPI } from 'subsonic-api';
+import { serverUrl } from './connection-security'
+import { randomId } from './random-id'
 
 type Creds = { url: string; username: string; password: string };
 
-export const session = $state<{ api: SubsonicAPI | null; base: string; authQs: string; username: string; admin: boolean }>({
-  api: null, base: '', authQs: '', username: '', admin: false,
+export const session = $state<{ api: SubsonicAPI | null; base: string; authQs: string; username: string; admin: boolean; error: string }>({
+  api: null, base: '', authQs: '', username: '', admin: false, error: '',
 });
 
 // subsonic-api resolves failed responses instead of throwing
@@ -14,11 +16,15 @@ export function ok<T extends { status: string }>(r: T): T {
 }
 
 export async function login(c: Creds) {
-  const base = c.url.replace(/\/+$/, '');
+  session.error = ''
+  const base = serverUrl(c.url)
   // ponytail: one salt per install keeps cover and stream URLs identical across runs, so the browser cache serves them
-  const salt = readPreference('auth.salt') || crypto.randomUUID().replace(/-/g, '');
+  const salt = readPreference('auth.salt') || randomId()
   writePreference('auth.salt', salt);
-  const api = new SubsonicAPI({ url: base, auth: { username: c.username, password: c.password }, salt, reuseSalt: true });
+  const api = new SubsonicAPI({
+    url: base, auth: { username: c.username, password: c.password }, salt, reuseSalt: true,
+    fetch: (input, init) => fetch(input, { ...init, redirect: 'error' }),
+  })
   const r = await api.ping(); // the library resolves failures, so check status ourselves
   if (r.status === 'failed') throw new Error(r.error.message);
   // ponytail: capture the token/salt query once so cover and stream URLs can be built synchronously
@@ -32,11 +38,20 @@ export async function login(c: Creds) {
 export function logout() { writePreference('creds', null); session.api = null; }
 
 export async function restore() {
-  // a share link carries the account in the fragment: #u=share&p=...&s=http://server
+  session.error = ''
+  const failed = (error: unknown) => {
+    logout()
+    session.error = error instanceof Error ? error.message : 'Login failed'
+  }
+  // HTTP links are supported for the user's trusted home network or Tailscale.
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.get('u') && h.get('p') && h.get('s')) {
     history.replaceState(null, '', location.pathname);
-    return login({ url: h.get('s')!, username: h.get('u')!, password: h.get('p')! }).catch(logout);
+    try {
+      const base = serverUrl(h.get('s')!)
+      await login({ url: base, username: h.get('u')!, password: h.get('p')! })
+    } catch (error) { failed(error) }
+    return
   }
   // the desktop app injects its local server and account; otherwise use what the user typed last time
   if (window.desktop) {
@@ -45,7 +60,7 @@ export async function restore() {
     return;
   }
   const saved = readJsonPreference<Partial<Creds> | null>('creds', null);
-  if (saved && typeof saved.url === 'string' && typeof saved.username === 'string' && typeof saved.password === 'string') await login(saved as Creds).catch(logout);
+  if (saved && typeof saved.url === 'string' && typeof saved.username === 'string' && typeof saved.password === 'string') await login(saved as Creds).catch(failed)
 }
 
 export const coverUrl = (id: string | undefined, size = 300) =>

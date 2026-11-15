@@ -7,7 +7,7 @@ const historyDirectory = await mkdtemp(path.join(os.tmpdir(), 'music-audit-'));
 const history = new MusicDatabase(path.join(historyDirectory, 'music.sqlite'));
 import { bootstrap } from './fixture.mjs';
 
-const root = path.resolve(import.meta.dirname, '../../dist');
+const root = process.env.MUSIC_AUDIT_ROOT || path.resolve(import.meta.dirname, '../../dist');
 const port = Number(process.env.MUSIC_AUDIT_PORT || 4178);
 import { albums, songs, artists, playlists, playlistSongs } from './data.mjs';
 let revision = 0;
@@ -67,7 +67,22 @@ const server = http.createServer(async (req, res) => {
     res.end(file.endsWith('index.html') ? data.toString().replace('<head>', `<head>${injection}`) : data);
   } catch { res.writeHead(404).end('Not found; build the frontend first.'); }
 });
-server.listen(port, '127.0.0.1', () => console.log(`Music regression fixture: http://127.0.0.1:${port} (synthetic local library, real silent WAV playback)`));
-const stop = () => server.close(async () => { await history.close(); await rm(historyDirectory, { recursive: true, force: true }); });
+server.listen(port, '127.0.0.1', () => {
+  const url = `http://127.0.0.1:${server.address().port}`
+  console.log(`Music regression fixture: ${url} (synthetic local library, real silent WAV playback)`)
+  process.send?.({ url })
+})
+let stopping = false
+const stop = () => {
+  if (stopping) return
+  stopping = true
+  server.closeAllConnections()
+  server.close(async () => {
+    await history.close()
+    await rm(historyDirectory, { recursive: true, force: true })
+    if (process.connected) process.disconnect()
+  })
+}
+process.on('disconnect', stop)
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);

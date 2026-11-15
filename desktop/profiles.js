@@ -22,14 +22,14 @@ const alive = pid => {
 };
 export function assertProfileClosed(directory) {
   const lock = path.join(directory, '.music-profile.lock');
-  if (existsSync(lock) && alive(readJSON(lock).pid)) throw new Error('This profile is open in another Music window. Quit that version before continuing.');
+  if (existsSync(lock) && alive(readJSON(lock).pid)) throw new Error('This profile is open in another Kept window. Quit that version before continuing.');
   // Older versions only have Chromium's lock. Do not copy their live browser storage.
   try {
     const target = readlinkSync(path.join(directory, 'SingletonLock'));
     const owner = Number(target.slice(target.lastIndexOf('-') + 1));
     // Electron has already claimed its Chromium lock during this launch. Only
     // another process can prevent reclaiming our stale application PID lock.
-    if (owner !== process.pid && alive(owner)) throw new Error('Quit Music before copying its profile, then try again.');
+    if (owner !== process.pid && alive(owner)) throw new Error('Quit Kept before copying its profile, then try again.');
   } catch (error) { if (!['ENOENT', 'EINVAL'].includes(error.code)) throw error; }
 }
 export function lockProfile(directory) {
@@ -45,7 +45,7 @@ export function lockProfile(directory) {
       rmSync(file);
     }
   }
-  throw new Error('Another Music version is opening this profile. Try again after it closes.');
+  throw new Error('Another Kept version is opening this profile. Try again after it closes.');
 }
 
 const profileName = value => {
@@ -63,12 +63,13 @@ export function launchProfile({ argv, env, appData, channel }) {
     if (!value || value.startsWith('--')) throw new Error(`${name} needs a value.`);
     options[name.slice(2)] = value;
   }
+  // Kept retains the original Music directories so upgrades keep all user data.
   const existingDirectory = path.join(appData, 'Music');
   const customRoot = options['data-dir'] || env.MUSIC_DATA_DIR;
   const explicitName = options.profile || env.MUSIC_PROFILE;
   const root = customRoot ? path.resolve(customRoot) : path.join(appData, 'Music Preview');
   const useExisting = options.existing || (channel !== 'preview' && !customRoot && !explicitName);
-  if (options.existing && (customRoot || explicitName)) throw new Error('Use --use-existing on its own. It opens the normal Music profile.');
+  if (options.existing && (customRoot || explicitName)) throw new Error('Use --use-existing on its own. It opens the normal Kept profile.');
   const last = useExisting || explicitName ? 'default' : readJSON(path.join(root, 'last-profile.json'), { name: 'default' }).name;
   const name = useExisting ? 'existing' : profileName(explicitName || last);
   return { name, root, directory: useExisting ? existingDirectory : path.join(root, 'profiles', name), existingDirectory, existing: useExisting, portable: !!customRoot };
@@ -101,7 +102,7 @@ export async function listProfiles(profile) {
 }
 
 export async function copyProfile(source, target, defaultMusicFolder) {
-  if (!existsSync(source.directory)) throw new Error('No existing Music profile was found on this computer. Start fresh instead.');
+  if (!existsSync(source.directory)) throw new Error('No existing Kept profile was found on this computer. Start fresh instead.');
   assertProfileClosed(source.directory);
   lockProfile(source.directory);
   const staging = `${target.directory}.copying`;
@@ -111,7 +112,7 @@ export async function copyProfile(source, target, defaultMusicFolder) {
       recursive: true, errorOnExist: true, force: false,
       filter: file => !['.music-profile.lock', 'SingletonLock', 'SingletonCookie', 'SingletonSocket', 'Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'Crashpad', 'cache'].includes(path.basename(file)),
     });
-    const copied = { ...loadProfile(source, defaultMusicFolder), name: target.name, label: 'Copy of Music', copiedAt: Date.now(), createdAt: Date.now() };
+    const copied = { ...loadProfile(source, defaultMusicFolder), name: target.name, label: 'Copy of Kept', copiedAt: Date.now(), createdAt: Date.now() };
     writeJSON(path.join(staging, 'profile.json'), copied);
     renameSync(staging, target.directory);
     return copied;

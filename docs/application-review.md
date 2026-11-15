@@ -5,6 +5,10 @@ The [feature map](feature-map.md) routes user actions to code and behavior contr
 The [coverage ledger](regression-coverage.md) maps failures to maintained checks;
 [core-reliability.md](core-reliability.md) describes integration boundaries.
 
+Use `pnpm --dir desktop validate` for the complete build gate; see
+[testing.md](testing.md) for setup, artifacts and remaining device checks.
+Focused commands help diagnose failures but do not replace that gate.
+
 ## Identify the candidate
 
 Record checkout, branch, head, base and dirty files. Inspect the diff and callers;

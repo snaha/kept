@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const output = path.resolve(import.meta.dirname, '../../../.audit-results', new Date().toISOString().replace(/[:.]/g, '-'));
+const output = process.env.MUSIC_AUDIT_OUTPUT || path.resolve(import.meta.dirname, '../../../.audit-results', new Date().toISOString().replace(/[:.]/g, '-'));
 await mkdir(output, { recursive: true });
 const cli = process.env.MUSIC_AGENT_BROWSER || 'agent-browser';
 const args = ['--session', process.env.MUSIC_AUDIT_SESSION || 'music-regressions'];
@@ -33,6 +33,7 @@ try {
   if (!viewports.length) throw new Error('Unknown MUSIC_AUDIT_VIEWPORT');
   for (const [width, height] of viewports) {
     const size = `${width}x${height}`;
+    console.log(`${size}: starting`);
     run('set', 'viewport', String(width), String(height));
     run('open', process.env.MUSIC_AUDIT_URL || `http://127.0.0.1:${process.env.MUSIC_AUDIT_PORT || 4178}`);
     run('wait', '.tile-wrap');
@@ -353,6 +354,10 @@ try {
     assert(`getComputedStyle(document.querySelector('.browse')).opacity==='1'`, 'Focused search must remain visible while idle');
     evaluate('document.activeElement?.blur()');
     run('wait', '3200');
+    // Establish an actual upward scroll independently of the preceding focus checks.
+    evaluate('document.querySelector(".scroll").scrollTop=2000')
+    run('wait', '--fn', 'document.querySelector(".scroll").scrollTop > 0')
+    run('wait', '100')
     evaluate('document.querySelector(".scroll").scrollTop=0');
     run('wait', '300');
     assert(`!document.querySelector('.browse').classList.contains('hidden')`, 'Scrolling back to the top must reveal the toolbar');
@@ -421,15 +426,49 @@ try {
     capture(size, 'grid-gloss');
     run('click', button('Glossy sleeves'));
     assert(`!document.querySelector('.glossy-sleeve')`, 'Turning gloss off must restore plain artwork');
+    if (size === '390x844') {
+      // Check touch-event ownership as well as narrow geometry. The physical Safari gesture remains a device check.
+      run('open', process.env.MUSIC_AUDIT_URL || `http://127.0.0.1:${process.env.MUSIC_AUDIT_PORT || 4178}`)
+      run('wait', '.tile-wrap')
+      run('click', '[aria-label="Search library"]')
+      run('mouse', 'move', String(width / 2), String(height / 2))
+      evaluate(`(() => {
+        document.activeElement?.blur()
+        window.__touchPlay = document.querySelector('.tile-play button')
+        window.__touchPlay.focus()
+        window.__touchPlay.dispatchEvent(new TouchEvent('touchstart', { bubbles: true }))
+        const target = window.__touchPlay.getBoundingClientRect()
+        document.querySelector('.scroll').scrollTop += target.top + target.height / 2 - document.querySelector('.browse').offsetHeight / 2
+      })()`)
+      run('wait', '3200')
+      assert(`document.querySelector('.browse').classList.contains('hidden')`, 'Touch playback regression starts with hidden chrome')
+      evaluate(`(() => {
+        const r = window.__touchPlay.getBoundingClientRect()
+        window.__touchPoint = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }
+        window.__touchPointer = { ...window.__touchPoint, bubbles: true, pointerType: 'touch', pointerId: 1, isPrimary: true }
+        window.__touchPlay.dispatchEvent(new PointerEvent('pointerdown', window.__touchPointer))
+        window.__touchPlay.dispatchEvent(new PointerEvent('pointermove', window.__touchPointer))
+      })()`)
+      run('wait', '250')
+      assert(`document.querySelector('.browse').classList.contains('hidden') && window.__touchPlay.contains(document.elementFromPoint(window.__touchPoint.clientX, window.__touchPoint.clientY))`, 'Waking chrome must not cover Play before the finger is lifted')
+      evaluate(`window.__touchPlay.dispatchEvent(new PointerEvent('pointerup', window.__touchPointer)); window.__touchPlay.click()`)
+      run('wait', '--fn', 'window.__auditAudio.some(audio => !audio.paused && audio.currentTime > 0)')
+      assert(`window.__auditCommands.filter(command => command[0] === 'play').length === 1 && !document.querySelector('.browse').classList.contains('hidden')`, 'One completed touch must start playback once, then reveal chrome')
+      capture(size, 'touch-first-play')
+    }
     results.push({ size, status: 'passed' });
     console.log(`${size}: passed`);
   }
 } catch (error) {
+  console.error(error.message)
   results.push({ status: 'failed', error: error.message });
   try { run('screenshot', path.join(output, 'failure.png')); await writeFile(path.join(output, 'failure-snapshot.txt'), run('snapshot')); } catch {}
   process.exitCode = 1;
 } finally {
+  try { run('close') } catch (error) {
+    results.push({ status: 'failed', stage: 'browser-cleanup', error: error.message })
+    process.exitCode = 1
+  }
   await writeFile(path.join(output, 'results.json'), JSON.stringify({ automated: results, visualReview: 'pending; inspect screenshots against approved references' }, null, 2));
-  try { run('close'); } catch {}
   console.log(`Audit artifacts: ${output}`);
 }

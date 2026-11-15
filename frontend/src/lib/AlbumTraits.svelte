@@ -20,7 +20,7 @@
       <div class="trait"><span>{left}</span><Slider type="single" min={0} max={100} step={1} value={traits[key as keyof typeof traits]} onValueChange={value => { traits[key as keyof typeof traits] = value; save(); }} aria-label="Album {left} to {right}" /><span>{right}</span></div>
     {/each}
   {/if}
-  <p>Saved for this album in Music. These are your tags; untagged albums stay in All music.</p>
+  <p>Saved for this album in Kept. These are your tags; untagged albums stay in All music.</p>
   {#if catalog.error}<p role="alert">{catalog.error}</p>{/if}
 </div>
 <style>

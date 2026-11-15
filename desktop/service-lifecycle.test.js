@@ -17,6 +17,7 @@ test('frontend startup waits for listening, reports collisions, and releases the
   const server = http.createServer((_request, response) => response.end('ready'));
   await listenFrontend(server, 0);
   const port = server.address().port;
+  assert.equal(server.address().address, '0.0.0.0', 'HTTP sharing is reachable from the home network')
   const failed = http.createServer();
   try {
     await assert.rejects(listenFrontend(failed, port), /EADDRINUSE/);

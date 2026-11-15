@@ -92,7 +92,7 @@ export function watchScan() {
       if (stopped || api !== session.api) return;
       const next = { scanning: s.scanning, count: s.count ?? 0, lastScan: String(s.lastScan ?? '') };
       library.scan = { scanning: next.scanning, count: next.count, checked: true,
-        error: s.error ? `Music indexing failed: ${s.error}` : '', pending: library.scan.pending && poll <= scanRequested, startError: next.scanning ? '' : library.scan.startError };
+        error: s.error ? `Kept indexing failed: ${s.error}` : '', pending: library.scan.pending && poll <= scanRequested, startError: next.scanning ? '' : library.scan.startError };
       // A small scan can finish before the first poll, or entirely between polls.
       // Refresh the first snapshot and any completed scan, even without seeing it start.
       if (!previous || previous.count !== next.count || previous.lastScan !== next.lastScan || (previous.scanning && !next.scanning)) { refreshPending = true; library.revision++; }

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { launchProfile, newProfile, copyProfile, lockProfile, readJSON, writeJSON } from './profiles.js';
 
-test('preview, portable and fresh profiles isolate normal Music without clearing its state', async () => {
+test('preview, portable and fresh profiles isolate normal Kept without clearing its state', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'music-profiles-'));
   try {
     const options = { argv: [], env: {}, appData: directory, channel: 'preview' };
@@ -33,8 +33,8 @@ test('a live profile owner prevents both a second launch and a copy', async () =
     const source = { name: 'existing', directory: path.join(directory, 'source') };
     const target = { name: 'copy', directory: path.join(directory, 'copy') };
     lockProfile(source.directory);
-    assert.throws(() => lockProfile(source.directory), /open in another Music/);
-    await assert.rejects(copyProfile(source, target, directory), /open in another Music/);
+    assert.throws(() => lockProfile(source.directory), /open in another Kept/);
+    await assert.rejects(copyProfile(source, target, directory), /open in another Kept/);
     assert.equal(readJSON(path.join(source.directory, '.music-profile.lock')).pid, process.pid);
     assert.equal(existsSync(target.directory), false);
     // An invalid PID is deterministically stale, without guessing a free system PID.
