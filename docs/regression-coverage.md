@@ -137,7 +137,7 @@ artifact paths. Pending native/audio/performance checks stay explicitly pending.
 
 ### Kept packaging and Mac verification — 14 November 2026
 
-- `desktop/mac-distribution.test.js` covers stable/preview branding with unchanged bundle IDs, complete authentication methods, rejection of missing/partial credentials and stopping on signature, staple or Gatekeeper failures. The packaging entrypoint rejects missing credentials for stable releases; previews without credentials retain signature checks and explicit notices.
+- `desktop/mac-distribution.test.js` covers stable/preview branding with unchanged bundle IDs, complete authentication methods, rejection of missing/partial credentials and stopping on signature, staple or Gatekeeper failures. The original preview-only exception was extended to stable releases on 15 November 2026 by explicit product decision; both retain signature checks and explicit notices without credentials.
 - Profile tests retain the original Music directories and existing data. The Linux portable test launches the renamed app through Open Kept and preserves its Data folder across updates.
 - All Mac downloads require `codesign` success. Notarized builds additionally require `stapler` and `spctl` success before installer/portable packaging. Local development bundles remain ad-hoc and are explicitly excluded from distribution.
 - Native gap: a signed/notarized download and quarantined Finder launch remain pending until Apple credentials are configured. Repeatable setup and expected results are in [desktop distribution](../desktop/README.md#macos). Existing unsigned Music Preview artifacts do not establish this result.
@@ -147,3 +147,9 @@ artifact paths. Pending native/audio/performance checks stay explicitly pending.
 - The preview download notice, PR artifact comment, portable README and DMG Read Me name **Done**, **Move to Trash**, **Open Anyway** and the authentication step explicitly. These instructions apply to the “Apple could not verify” warning, not a malware-detection alert.
 - Packaging coverage checks that the preview background PNG matches the configured Finder window and that signed/notarized configurations retain the ordinary layout. Native layout check passed for the locally packaged candidate: mounted the generated DMG in Finder, inspected all three icons and the Retina background without scrolling or overlap, and opened the Read Me to confirm the complete steps. Evidence: `.audit-results/dmg-instructions/finder.png`. Repeat this check when changing background size or icon positions.
 - The previous CI artifact at `49754dc` was installed with download quarantine preserved and the user's Open Anyway authentication. Native folder selection, indexing, silent-track playback progress, pause, process cleanup on Quit and normal reopening passed. Evidence: `.audit-results/ci-install-49754dc/`. Audible output and warning-free notarized installation remain unverified.
+
+### Kept 0.7.0 stable release policy — 15 November 2026
+
+- Both stable and preview Mac packages can be explicitly unnotarized. Packaging tests cover both channels, missing credentials, partial-credential rejection before packaging, correct product names, notice assets and failure of signature/staple/Gatekeeper verification. Complete credentials still require notarization; a failed notarization cannot downgrade the build.
+- Release publication rejects tags that differ from the packaged version and reads versioned release highlights before uploading assets.
+- Mac downloads remain labeled not-notarized with Done / Open Anyway instructions. The existing warning-free notarized-installation gap remains open.

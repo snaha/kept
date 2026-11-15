@@ -18,4 +18,4 @@ const { developerSigned, notarizationConfigured } = signingConfiguration(process
 const info = { dirty, version, channel, productName, commit, branch, builtAt: new Date().toISOString(), runUrl: process.env.GITHUB_RUN_ID ? `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : '', developerSigned, notarizationConfigured };
 await writeFile(path.join(root, 'build-info.json'), JSON.stringify(info, undefined, 2));
 await writeFile(path.join(root, 'builder-config.json'), JSON.stringify(configuration, undefined, 2))
-console.log(`${productName} ${version} (${commit.slice(0, 7)}) · ${notarizationConfigured && developerSigned ? 'Developer ID + notarization configured (verification pending)' : channel === 'preview' ? macDownloadNotice(false) : 'local development configuration; stable Mac downloads require signing and notarization'}`)
+console.log(`${productName} ${version} (${commit.slice(0, 7)}) · ${notarizationConfigured && developerSigned ? 'Developer ID + notarization configured (verification pending)' : macDownloadNotice(false, { productName })}`)
