@@ -3,4 +3,4 @@ import { requireMacDistribution, macDownloadNotice } from './mac-distribution.mj
 const configuration = requireMacDistribution(process.env)
 console.log(configuration.developerSigned && configuration.notarizationConfigured
   ? 'Signing and notarization configured; app verification pending.'
-  : macDownloadNotice(false))
+  : macDownloadNotice(false, { productName: process.env.MUSIC_CHANNEL === 'preview' ? 'Kept Preview' : 'Kept' }))

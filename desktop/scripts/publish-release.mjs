@@ -8,6 +8,12 @@ const release = path.resolve(process.env.MUSIC_RELEASE_DIR || 'release');
 const preview = process.env.MUSIC_CHANNEL === 'preview';
 const commit = process.env.GITHUB_SHA;
 const tag = preview ? `preview-${commit.slice(0, 7)}-${process.env.GITHUB_RUN_NUMBER}` : process.env.GITHUB_REF_NAME;
+const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+if (!preview && tag !== `v${pkg.version}`) throw new Error('Release tag must match the desktop package version')
+const highlights = await readFile(new URL(`../../docs/releases/${pkg.version}.md`, import.meta.url), 'utf8').catch(error => {
+  if (preview && error.code === 'ENOENT') return ''
+  throw error
+})
 const assets = (await readdir(release)).filter(file => /\.(zip|dmg|AppImage|deb|tar\.gz|md)$/.test(file)).sort();
 if (!assets.some(file => /\.(zip|AppImage)$/.test(file))) throw new Error('No desktop download was produced.');
 // Normalize spaces before hashing: GitHub changes them to dots when uploading,
@@ -27,6 +33,8 @@ const notes = `## ${preview ? 'Kept Preview' : 'Kept'}
 Commit: ${commit}
 Workflow: https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}
 
+${highlights}
+
 Choose the download matching your computer:
 - **Mac Apple Silicon:** ZIP/app or DMG. Intel Macs are not included.
 - **Linux x64 or arm64 (such as a Raspberry Pi with a 64-bit system):** AppImage or deb, when present.
@@ -34,7 +42,7 @@ Choose the download matching your computer:
 
 Regular previews use their own profile outside the app. Fresh startup selects the Music folder; add custom folders and open your collection, or Explore first. To copy an existing Kept profile, quit Kept first. Files are scanned where they are; audio is not copied. Settings → Advanced shows the selected folders, active profile and build.
 
-${process.env.MUSIC_MAC_INCLUDED === 'true' ? macDownloadNotice(process.env.MUSIC_NOTARIZED === 'true') : 'This release does not include Mac downloads.'}
+${process.env.MUSIC_MAC_INCLUDED === 'true' ? macDownloadNotice(process.env.MUSIC_NOTARIZED === 'true', { productName: preview ? 'Kept Preview' : 'Kept' }) : 'This release does not include Mac downloads.'}
 
 Profiles and personal credentials are not included in these downloads.
 `;

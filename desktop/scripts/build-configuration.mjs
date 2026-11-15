@@ -12,15 +12,15 @@ const NOTICE_Y = 456
 export function buildConfiguration(pkg, channel, version, env) {
   const productName = channel === 'preview' ? 'Kept Preview' : 'Kept'
   const { developerSigned, notarizationConfigured } = signingConfiguration(env)
-  const unnotarizedPreview = channel === 'preview' && !(developerSigned && notarizationConfigured)
+  const unnotarized = !(developerSigned && notarizationConfigured)
   return {
     ...pkg.build,
     productName,
     // Preserve the installed app identity and its OS permissions across renames.
     appId: channel === 'preview' ? 'dev.musicapp.desktop.preview' : 'dev.musicapp.desktop',
     extraMetadata: { version, productName, name: channel === 'preview' ? 'kept-preview' : pkg.name },
-    ...(unnotarizedPreview ? { dmg: { ...pkg.build.dmg,
-      background: 'build/dmg-preview-background.png',
+    ...(unnotarized ? { dmg: { ...pkg.build.dmg,
+      background: 'build/dmg-unnotarized-background.png',
       window: { width: DMG_WIDTH, height: DMG_HEIGHT },
       iconSize: DMG_ICON_SIZE,
       contents: [
@@ -31,7 +31,7 @@ export function buildConfiguration(pkg, channel, version, env) {
     } } : {}),
     mac: {
       ...pkg.build.mac,
-      ...(unnotarizedPreview ? { artifactName: '${productName}-${version}-${arch}-not-notarized.${ext}' } : {}),
+      ...(unnotarized ? { artifactName: '${productName}-${version}-${arch}-not-notarized.${ext}' } : {}),
       sign: 'scripts/sign-mac.mjs',
       ...(developerSigned ? { forceCodeSigning: true, ...(env.CSC_NAME ? { identity: env.CSC_NAME } : {}) } : {
         identity: '-',

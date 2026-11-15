@@ -31,7 +31,7 @@ const readme = `# ${info.productName} ${info.version}
 Build: ${info.commit}
 Branch: ${info.branch}
 
-## Open this portable preview
+## Open this portable app
 
 Extract this entire folder to a writable location. ${process.platform === 'darwin' ? 'Double-click Open Kept.command. Open the launcher, rather than the app inside it, to use the adjacent Data folder.' : 'Run ./Open\\ Kept.sh. The launcher extracts the AppImage at runtime, so FUSE is not required.'}
 
@@ -45,7 +45,7 @@ Settings → Advanced → Library & profile shows the build and data folder and 
 
 When upgrading from Music, replace the old app and launcher with Kept and Open Kept from this download, keeping Data. Remove the old launcher so it cannot start the previous version.
 
-For an update, quit the preview and replace only the app${process.platform === 'darwin' ? ' bundle' : ' image'}, keeping Data and the launcher. To compare versions, duplicate the whole folder before replacing the app in one copy. Each copied Data folder is independent. Never point two running versions at the same profile.
+For an update, quit the app and replace only the app${process.platform === 'darwin' ? ' bundle' : ' image'}, keeping Data and the launcher. To compare versions, duplicate the whole folder before replacing the app in one copy. Each copied Data folder is independent. Never point two running versions at the same profile.
 
 ${process.platform === 'darwin' ? '' : 'On Linux, replace Kept.AppImage with the file of the same name from the new portable download. When updating an older portable folder with a versioned AppImage filename, replace Open Kept.sh as well, keeping Data.\n'}
 
@@ -53,7 +53,7 @@ ${process.platform === 'darwin' ? '' : 'On Linux, replace Kept.AppImage with the
 
 Moving this folder to another computer requires choosing accessible music-folder paths. Folder permissions may need granting again.
 
-${process.platform === 'darwin' ? macDownloadNotice(notarized, true) : ''}
+${process.platform === 'darwin' ? macDownloadNotice(notarized, { portable: true, productName: info.productName }) : ''}
 No personal library or login is included in this download.
 `;
 await writeFile(path.join(staging, 'README.md'), readme);
