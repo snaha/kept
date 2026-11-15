@@ -20,6 +20,7 @@ test('Kept stable and preview packages preserve the installed bundle identities'
     assert.equal(configuration.mac.notarize, true)
     assert.equal(configuration.mac.forceCodeSigning, true)
     assert.notEqual(configuration.mac.identity, '-')
+    assert.deepEqual(configuration.dmg, pkg.build.dmg)
   }
 })
 
@@ -77,6 +78,13 @@ test('unnotarized preview is available, clearly labelled and still requires a va
   assert.equal(configuration.mac.notarize, false)
   assert.match(configuration.mac.artifactName, /not-notarized/)
   assert.ok(configuration.dmg.contents.some(item => item.path === 'build/read-me-first.txt'))
+  const background = readFileSync(new URL(configuration.dmg.background, import.meta.url))
+  const PNG_WIDTH_OFFSET = 16
+  const PNG_HEIGHT_OFFSET = 20
+  const PNG_SIGNATURE = 'PNG'
+  assert.equal(background.subarray(1, 1 + PNG_SIGNATURE.length).toString(), PNG_SIGNATURE)
+  assert.equal(background.readUInt32BE(PNG_WIDTH_OFFSET), configuration.dmg.window.width)
+  assert.equal(background.readUInt32BE(PNG_HEIGHT_OFFSET), configuration.dmg.window.height)
   assert.match(macDownloadNotice(false), /NOT NOTARIZED.*Open Anyway required/)
   assert.match(macDownloadNotice(true), /notarized by Apple/)
   assert.equal(macNotarizationRequired({ channel: 'stable' }), true)

@@ -53,7 +53,7 @@ ${process.platform === 'darwin' ? '' : 'On Linux, replace Kept.AppImage with the
 
 Moving this folder to another computer requires choosing accessible music-folder paths. Folder permissions may need granting again.
 
-${process.platform === 'darwin' ? macDownloadNotice(notarized) : ''}
+${process.platform === 'darwin' ? macDownloadNotice(notarized, true) : ''}
 No personal library or login is included in this download.
 `;
 await writeFile(path.join(staging, 'README.md'), readme);

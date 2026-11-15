@@ -88,7 +88,9 @@ Builds exist for Linux x86_64 and arm64 and macOS on Apple Silicon. The Linux bu
 
 ## macOS
 
-**Previews remain available without Apple credentials.** They use an ad-hoc signature, with “not-notarized” in Mac download filenames and the Actions artifact name. The DMG includes a read-me-first notice, and the PR comment, release page and portable README explain **System Settings → Privacy & Security → Open Anyway**. This is a deliberate preview-only exception; it does not remove Apple's verification warning.
+**Previews remain available without Apple credentials.** They use an ad-hoc signature, with “not-notarized” in Mac download filenames and the Actions artifact name. On first launch, in the **Apple could not verify** warning, click **Done**, not **Move to Trash**. Then open **System Settings → Privacy & Security**, scroll to **Security**, choose **Open Anyway** for Kept Preview, and authenticate with Touch ID or your Mac password. Open the app again if needed. These steps apply to DMG and ZIP downloads.
+
+The unnotarized preview DMG displays these steps in its background and includes `read-me-first.txt`. The PR download comment, release page and portable README also explain them. This is a deliberate preview-only exception; it does not remove Apple's verification warning or apply to a malware-detection alert. The background source is `build/dmg-preview-background.svg`; its regeneration command is in the SVG comment. Its icon positions match `scripts/build-configuration.mjs`. Notarized builds retain the ordinary installer layout.
 
 Stable Mac downloads require a **Developer ID Application** certificate and Apple notarization. Previews use notarization when complete credentials are present. Partial credentials or failed signing/notarization stop the build instead of downgrading it. Every packaged app passes `codesign --verify --deep --strict`; notarized builds also pass stapled-ticket validation and Gatekeeper assessment. The portable app is copied with macOS metadata preserved and verified again.
 

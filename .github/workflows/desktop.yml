@@ -198,7 +198,16 @@ jobs:
             if [ "$MAC_NOTARIZED" = true ]; then
               echo "Mac app: Developer ID signed, notarized by Apple and verified with Gatekeeper."
             else
-              echo "**Mac preview: NOT NOTARIZED — Open Anyway required.** After opening the installed Kept Preview once and dismissing the warning, go to **System Settings → Privacy & Security → Open Anyway** and confirm. Only approve a build you trust. [Apple’s instructions](https://support.apple.com/en-us/102445)."
+              echo
+              echo "**Mac preview: NOT NOTARIZED — Open Anyway required.** macOS may offer to move this preview to the Trash on first launch. To keep and open it:"
+              echo
+              echo "1. Drag Kept Preview into Applications, then open it from there. For a portable download, keep its folder together and use **Open Kept.command** instead."
+              echo "2. In the **Apple could not verify** warning, click **Done**, not **Move to Trash**. Done leaves the app installed."
+              echo "3. Open **System Settings → Privacy & Security** and scroll to **Security**."
+              echo "4. Click **Open Anyway** for Kept Preview, confirm **Open Anyway** if asked, then approve with Touch ID or your Mac password."
+              echo "5. Open Kept Preview again if it does not launch automatically."
+              echo
+              echo "These steps apply to DMG and ZIP downloads. The DMG also includes **read-me-first.txt**. Only approve a build you trust; this is for the verification warning, not a malware-detection alert. [Apple’s instructions](https://support.apple.com/en-us/102445)."
             fi
             echo
             gh api "repos/$GH_REPO/actions/runs/$RUN/artifacts" -q ".artifacts[] | \"- [\(.name)](https://github.com/$GH_REPO/actions/runs/$RUN/artifacts/\(.id))\""

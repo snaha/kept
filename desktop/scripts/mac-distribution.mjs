@@ -29,10 +29,20 @@ export function macNotarizationRequired(info) {
   return info.channel !== 'preview' || Boolean(info.developerSigned && info.notarizationConfigured)
 }
 
-export function macDownloadNotice(notarized) {
+export function macDownloadNotice(notarized, portable = false) {
   return notarized
     ? 'Mac app: Developer ID signed, notarized by Apple and verified by Gatekeeper before packaging.'
-    : 'Mac preview: NOT NOTARIZED — Open Anyway required. After installing Kept Preview, open it once and dismiss the warning. In System Settings → Privacy & Security, choose Open Anyway for Kept Preview, then confirm. Only approve a build you trust. See https://support.apple.com/en-us/102445.'
+    : `### Mac preview: NOT NOTARIZED — Open Anyway required
+
+This preview has not been notarized by Apple. On first launch, macOS may say “Apple could not verify” and offer to move it to the Trash. To keep and open this preview:
+
+1. ${portable ? 'Keep the extracted portable folder together and open Open Kept.command. Do not move the app out of that folder.' : 'Drag Kept Preview into Applications, then open it from there. For a portable download, keep its folder together and use Open Kept.command instead.'}
+2. In the “Apple could not verify” warning, click **Done**, not **Move to Trash**. Done leaves the app installed.
+3. Open **System Settings → Privacy & Security** and scroll to the Security section.
+4. Click **Open Anyway** for Kept Preview, confirm **Open Anyway** if asked, and approve with Touch ID or your Mac password.
+5. ${portable ? 'Use Open Kept.command again to start with the portable Data folder.' : 'Open Kept Preview again if it does not launch automatically.'}
+
+These steps apply to both DMG and ZIP downloads. The DMG also includes read-me-first.txt. Only approve a build you trust; these instructions apply to the verification warning, not an alert that malware was detected. [Apple’s instructions](https://support.apple.com/en-us/102445).`
 }
 
 export function verifyMacApp(appPath, notarized = true, run = execFileSync) {
