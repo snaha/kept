@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('desktop', {
   showData: () => desktopCall('show-data'), changeFolder: (mode, folder) => desktopCall('change-folder', mode, folder),
   restart: () => desktopCall('restart'),
   lanIp: () => desktopCall('lan-ip'), setFrame: on => desktopCall('set-frame', on),
+  lanShare: () => desktopCall('lan-share'),
   onChange: callback => {
     const listener = (_event, value) => callback(value);
     ipcRenderer.on('desktop:changed', listener);
@@ -86,4 +87,26 @@ contextBridge.exposeInMainWorld('musicAssistant', {
   save: change => assistantCall('save', change),
   ask: request => assistantCall('ask', request),
   cancel: id => assistantCall('cancel', id),
+})
+
+// Spotify, playback only. The main process holds the tokens: the window gets a status and a few commands.
+const spotifyCall = async (operation, request) => {
+  const reply = await ipcRenderer.invoke(`spotify:${operation}`, request)
+  if (reply.error) throw new Error(reply.error)
+  return reply.value
+}
+contextBridge.exposeInMainWorld('musicSpotify', {
+  status: () => spotifyCall('status'),
+  connect: clientId => spotifyCall('connect', clientId),
+  disconnect: () => spotifyCall('disconnect'),
+  devices: () => spotifyCall('devices'),
+  selectDevice: id => spotifyCall('select-device', id),
+  search: query => spotifyCall('search', query),
+  command: (action, value) => spotifyCall('command', { action, value }),
+  playback: () => spotifyCall('playback'),
+  onChange: callback => {
+    const listener = (_event, status) => callback(status)
+    ipcRenderer.on('spotify:changed', listener)
+    return () => ipcRenderer.removeListener('spotify:changed', listener)
+  },
 })

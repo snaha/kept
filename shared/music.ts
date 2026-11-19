@@ -1,7 +1,7 @@
-export type Source = 'local';
+export type Source = 'local' | 'spotify';
 // Names an entity in the catalog. 'navidrome' is a Navidrome song id (legacy rows have no ref and
 // mean this); 'asset' is a virtual catalog asset id. It is never what an audio element loads.
-export type CatalogRef = { kind: 'navidrome' | 'asset'; id: string };
+export type CatalogRef = { kind: 'navidrome' | 'asset' | 'spotify'; id: string };
 export type Track = {
   id: string; rawId: string; source: Source; title: string; artist?: string; album?: string;
   albumId?: string; coverId?: string; cover: string; duration?: number; track?: number; disc?: number;

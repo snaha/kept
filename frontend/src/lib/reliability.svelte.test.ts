@@ -5,6 +5,7 @@ import type { SubsonicAPI } from 'subsonic-api';
 import { session } from './api.svelte';
 import { library, addCollection, pick, setMode, watchScan, requestScan } from './library.svelte';
 import { catalogSearch, startCatalogSearch, moreCatalogSearch, disposeCatalogSearch, captureCatalogSearch, restoreCatalogSearch } from './catalog-search.svelte';
+import { spotify } from './spotify.svelte';
 import { player, play, pause, moveQueue, enqueue, disposePlayback, beginCollectionOperation } from './player.svelte';
 import { readJsonPreference, writePreference, retryPreferences, subscribePreferences } from './preferences';
 import { reconcileBrowseOrder, orderedBrowseCollections } from './browse-view';
@@ -817,4 +818,14 @@ describe('review regressions', () => {
       expect(document.activeElement).toBe(document.querySelector('.tile'));
     });
   }
+  it('keeps the queue and the playing track when a spotify track cannot start yet', () => {
+    play([track], 0);
+    const before = player.queue.map(t => t.queueEntryId);
+    spotify.connected = true; spotify.deviceId = '';
+    const spotifyTrack: Track = { id: 'spotify:track:abc', rawId: 'abc', source: 'spotify', title: 'S', cover: '', available: true, catalogRef: { kind: 'spotify', id: 'abc' } } as Track;
+    expect(play([spotifyTrack], 0)).toBe(-1);
+    expect(player.queue.map(t => t.queueEntryId)).toEqual(before);
+    expect(player.error).toMatch(/Spotify/);
+    spotify.connected = false;
+  });
 });

@@ -58,11 +58,11 @@ export function runCatalogContractSuite(label, createService) {
   })
 
   run('keeps online sources off until the user consents', async service => {
-    assert.deepEqual(await service.getConsent(), { 'online-lookups': 'not-asked', acoustid: 'not-asked' })
+    assert.deepEqual(await service.getConsent(), { 'online-lookups': 'not-asked', acoustid: 'not-asked', spotify: 'not-asked' })
     const source = await service.registerSource(musicbrainz)
     assert.equal(source.consentState, 'not-asked')
     assert.deepEqual(routeSource(source), { status: 'not-permitted-by-user', consent: 'online-lookups' })
-    assert.deepEqual(await service.setConsent({ consent: 'online-lookups', value: 'granted', decidedAt: T1 }), { 'online-lookups': 'granted', acoustid: 'not-asked' })
+    assert.deepEqual(await service.setConsent({ consent: 'online-lookups', value: 'granted', decidedAt: T1 }), { 'online-lookups': 'granted', acoustid: 'not-asked', spotify: 'not-asked' })
     const [granted] = (await service.listSources()).sources.filter(item => item.id === musicbrainz.id)
     assert.deepEqual(routeSource(granted), { status: 'permitted' })
     const decision = await service.recordUserDecision({ kind: 'consent', consent: 'online-lookups', value: 'denied', decidedAt: T2 })

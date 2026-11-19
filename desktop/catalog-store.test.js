@@ -57,7 +57,7 @@ test('the catalog survives a restart with its anchors, decisions and consent', t
   assert.deepEqual(store.call('getAlbum', { albumId }), before)
   assert.equal(before.album.traits.energy.value, ENERGY)
   assert.equal(before.album.favorite, true)
-  assert.deepEqual(store.call('getConsent'), { 'online-lookups': 'granted', acoustid: 'not-asked' })
+  assert.deepEqual(store.call('getConsent'), { 'online-lookups': 'granted', acoustid: 'not-asked', spotify: 'not-asked' })
   assert.deepEqual(store.call('ingestScan', { ...snapshot, observedAt: T2 }), { assetIds, albumIds: [albumId], conflicts: [] })
   assert.deepEqual(store.call('resolveProviderId', { sourceId: navidrome.id, kind: 'album', externalId: 'nd-album' }), { subject: album })
 })

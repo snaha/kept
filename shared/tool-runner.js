@@ -3,6 +3,8 @@
 // LLM drives the same ones through the descriptors in tool-contracts.js. Every ID in an output
 // is checked against the catalog before it leaves, and anything unknown is dropped and counted.
 // Types: tools.ts and tool-runner.d.ts.
+import { catalogError } from './catalog-rules.js'
+import { isUnanalysableId } from './source-policy.js'
 import { DEFAULT_TOOL_RESULTS, validateToolInput, validateToolOutput } from './tool-contracts.js'
 import {
   ALBUM_SPACING, ARTIST_SPACING, DEFAULT_MAX_PER_ALBUM, MIN_POOL_ALBUMS, NEUTRAL_SCORE, QUEUE_POOL_FACTOR, RANK_WEIGHTS, SEARCH_FETCH_LIMIT,
@@ -19,6 +21,20 @@ export const noFeatures = Object.freeze({
 export const noHistory = Object.freeze({ albumStats: async () => ({}) })
 
 const ref = (kind, id) => ({ kind, id })
+
+// Spotify is playback only: its entities are never a seed, never scored and never returned, whatever a feature store holds.
+const seedsOf = input => [input.seed, input.similarTo, ...(input.seeds ?? [])].filter(Boolean)
+function refuseUnanalysableSeeds(input) {
+  if (seedsOf(input).some(seed => isUnanalysableId(seed.id))) throw catalogError('invalid-source', 'analysis refused: a provider playback entity cannot seed a tool')
+}
+const withoutUnanalysable = ids => ids.filter(id => !isUnanalysableId(id))
+function analysableFeatures(features) {
+  return {
+    ...features,
+    albumVectors: async ids => features.albumVectors(withoutUnanalysable(ids)),
+    trackVectors: async ids => features.trackVectors(withoutUnanalysable(ids)),
+  }
+}
 // A feature store that fails must not take the tools down: they fall back to traits and metadata.
 const safely = async read => { try { return await read() } catch { return new Map() } }
 
@@ -265,9 +281,9 @@ const TOOLS = { search_catalog: searchCatalogTool, find_similar: findSimilarTool
 // detail, so a bogus ID from a feature store or a search index never leaves.
 async function keepKnown(name, raw, ctx) {
   const { albums } = ctx.snap
-  const known = async (kind, id, albumId) => kind === 'album'
+  const known = async (kind, id, albumId) => !isUnanalysableId(id) && (kind === 'album'
     ? albums.has(id)
-    : (await ctx.snap.detail(albumId))?.tracks.some(track => track.id === id)
+    : (await ctx.snap.detail(albumId))?.tracks.some(track => track.id === id))
   const strip = ({ albumId, ...rest }) => rest
   const filter = async (items, kindOf, idOf) => {
     const kept = []
@@ -295,8 +311,10 @@ export function createToolRunner({ catalog, features = noFeatures, history = noH
 
   async function runWithSnapshot(name, input, resolveOptions) {
     validateToolInput(name, input)
+    refuseUnanalysableSeeds(input)
+    const safeFeatures = analysableFeatures(features)
     const snapshot = await snap.load()
-    const ctx = { catalog, snap: snapshot, features, history, dropped: { count: 0 } }
+    const ctx = { catalog, snap: snapshot, features: safeFeatures, history, dropped: { count: 0 } }
     const options = resolveOptions ? await resolveOptions(snapshot) : undefined
     const raw = await TOOLS[name](input, ctx, options ?? {})
     const output = validateToolOutput(name, roundScores(await keepKnown(name, raw, ctx)))

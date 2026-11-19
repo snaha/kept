@@ -382,15 +382,15 @@ test('tags reach the read model, and a trait edit leaves a receipt that Undo tak
   assert.equal((await bridge.albums()).albums.red.favorite, true)
   assert.deepEqual(await bridge.undo({ id: favourite.id }), { status: 'undone' })
   assert.equal((await bridge.albums()).albums.red.favorite, false)
-  assert.deepEqual(await bridge.consent(), { 'online-lookups': 'granted', acoustid: 'not-asked' })
+  assert.deepEqual(await bridge.consent(), { 'online-lookups': 'granted', acoustid: 'not-asked', spotify: 'not-asked' })
   assert.equal((await database.service.verifyProjections()).consistent, true)
 })
 
 test('consent is offline by default and stored as a user decision', async t => {
   const { bridge, database } = await fixture(t)
-  assert.deepEqual(await bridge.consent(), { 'online-lookups': 'not-asked', acoustid: 'not-asked' })
-  assert.deepEqual(await bridge.setConsent({ consent: 'online-lookups', value: 'granted' }), { 'online-lookups': 'granted', acoustid: 'not-asked' })
-  assert.deepEqual(await bridge.setConsent({ consent: 'online-lookups', value: 'denied' }), { 'online-lookups': 'denied', acoustid: 'not-asked' })
+  assert.deepEqual(await bridge.consent(), { 'online-lookups': 'not-asked', acoustid: 'not-asked', spotify: 'not-asked' })
+  assert.deepEqual(await bridge.setConsent({ consent: 'online-lookups', value: 'granted' }), { 'online-lookups': 'granted', acoustid: 'not-asked', spotify: 'not-asked' })
+  assert.deepEqual(await bridge.setConsent({ consent: 'online-lookups', value: 'denied' }), { 'online-lookups': 'denied', acoustid: 'not-asked', spotify: 'not-asked' })
   assert.deepEqual(await database.service.getConsent(), await bridge.consent())
 })
 

@@ -2,8 +2,11 @@ import { readJsonPreference, readPreference, writePreference } from './preferenc
 import { SubsonicAPI } from 'subsonic-api';
 import { serverUrl } from './connection-security'
 import { randomId } from './random-id'
+import { rememberLanShare, type LanShare } from './lan-catalog'
+import { playbackResolver } from './playback-ref'
 
 type Creds = { url: string; username: string; password: string };
+let loginRevision = 0
 
 export const session = $state<{ api: SubsonicAPI | null; base: string; authQs: string; username: string; admin: boolean; error: string }>({
   api: null, base: '', authQs: '', username: '', admin: false, error: '',
@@ -15,7 +18,10 @@ export function ok<T extends { status: string }>(r: T): T {
   return r;
 }
 
-export async function login(c: Creds) {
+export function login(c: Creds) { return signIn(c) }
+
+async function signIn(c: Creds, share?: Partial<LanShare>) {
+  const mine = ++loginRevision
   session.error = ''
   const base = serverUrl(c.url)
   // ponytail: one salt per install keeps cover and stream URLs identical across runs, so the browser cache serves them
@@ -30,12 +36,29 @@ export async function login(c: Creds) {
   // ponytail: capture the token/salt query once so cover and stream URLs can be built synchronously
   const u = new URL(await api.getCoverArtURL({ id: '-' }));
   u.searchParams.delete('id');
-  session.api = api; session.base = base; session.authQs = u.searchParams.toString(); session.username = c.username;
-  session.admin = ok(await api.getUser({ username: c.username })).user.adminRole;
-  writePreference('creds', JSON.stringify(c));
+  if (mine !== loginRevision) return
+  const lan = share !== undefined && !window.desktop && c.username === 'share' && share.origin === location.origin
+    && share.server === base && typeof share.key === 'string' && share.key
+    ? { origin: share.origin, server: share.server, key: share.key } : undefined
+  if (!window.desktop) playbackResolver.clear()
+  rememberLanShare(lan)
+  session.base = base
+  session.authQs = u.searchParams.toString()
+  session.username = c.username
+  session.admin = false
+  session.api = api
+  const admin = ok(await api.getUser({ username: c.username })).user.adminRole
+  if (mine !== loginRevision) return
+  session.admin = admin
+  writePreference('creds', JSON.stringify({ url: c.url, username: c.username, password: c.password, lan }))
 }
 
-export function logout() { writePreference('creds', null); session.api = null; }
+export function logout() {
+  loginRevision++
+  rememberLanShare(undefined)
+  if (!window.desktop) playbackResolver.clear()
+  writePreference('creds', null); session.api = null;
+}
 
 export async function restore() {
   session.error = ''
@@ -43,14 +66,18 @@ export async function restore() {
     logout()
     session.error = error instanceof Error ? error.message : 'Login failed'
   }
+  const restoreAccount = async (c: Creds, share?: Partial<LanShare>) => {
+    const attempt = signIn(c, share)
+    const mine = loginRevision
+    await attempt.catch(error => { if (mine === loginRevision) failed(error) })
+  }
   // HTTP links are supported for the user's trusted home network or Tailscale.
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.get('u') && h.get('p') && h.get('s')) {
-    history.replaceState(null, '', location.pathname);
-    try {
-      const base = serverUrl(h.get('s')!)
-      await login({ url: base, username: h.get('u')!, password: h.get('p')! })
-    } catch (error) { failed(error) }
+    history.replaceState(undefined, '', location.pathname)
+    const server = h.get('s')!
+    await restoreAccount({ url: server, username: h.get('u')!, password: h.get('p')! },
+      { origin: h.get('origin') ?? undefined, key: h.get('catalog') ?? undefined, server })
     return
   }
   // the desktop app injects its local server and account; otherwise use what the user typed last time
@@ -59,8 +86,10 @@ export async function restore() {
     if (status.phase === 'ready') await login(status);
     return;
   }
-  const saved = readJsonPreference<Partial<Creds> | null>('creds', null);
-  if (saved && typeof saved.url === 'string' && typeof saved.username === 'string' && typeof saved.password === 'string') await login(saved as Creds).catch(failed)
+  const saved = readJsonPreference<Partial<Creds> & { lan?: Partial<LanShare> }>('creds', {})
+  if (saved && typeof saved.url === 'string' && typeof saved.username === 'string' && typeof saved.password === 'string') {
+    await restoreAccount({ url: saved.url, username: saved.username, password: saved.password }, saved.lan)
+  }
 }
 
 export const coverUrl = (id: string | undefined, size = 300) =>
