@@ -2,6 +2,7 @@ import { readJsonPreference, readPreference, writePreference } from './preferenc
 import { SubsonicAPI } from 'subsonic-api';
 import { serverUrl } from './connection-security'
 import { randomId } from './random-id'
+import { rememberShare } from './control-client.svelte'
 
 type Creds = { url: string; username: string; password: string };
 
@@ -50,6 +51,8 @@ export async function restore() {
     try {
       const base = serverUrl(h.get('s')!)
       await login({ url: base, username: h.get('u')!, password: h.get('p')! })
+      // Existing links without a mode keep playing here; new Control links opt in explicitly.
+      rememberShare(h.get('m') === 'control' ? 'control' : 'library', h.get('p')!)
     } catch (error) { failed(error) }
     return
   }

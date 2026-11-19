@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { control } from './control-client.svelte'
   import { keyboardScope } from './keyboard';
   import { onMount, tick, type Snippet } from 'svelte';
   import ArtworkView from './ArtworkView.svelte';
@@ -79,7 +80,7 @@
   if (menu) dismissActions(menu, false);
 }} />
 
-<ArtworkView id="player-view" className="now-playing" {palette} label="Now playing and queue" bind:listElement bind:bodyElement onkeydown={event => {
+<ArtworkView id="player-view" className={control.mode === 'control' ? 'now-playing remote-player' : 'now-playing'} {palette} label="Now playing and queue" bind:listElement bind:bodyElement onkeydown={event => {
   if (event.defaultPrevented) return;
   if ((event.target as HTMLElement).closest('.select-song') && !event.altKey && !event.ctrlKey && !event.metaKey && ['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
     event.preventDefault(); event.stopPropagation();
@@ -126,7 +127,7 @@
         requestAnimationFrame(() => document.getElementById(`player-tab-${player.queueTab}`)?.focus());
       }}>
         <button id="player-tab-queue" role="tab" aria-selected={player.queueTab === 'queue'} aria-controls="player-track-list" tabindex={player.queueTab === 'queue' ? 0 : -1} onclick={() => void selectTab('queue')}>Queue <span>{player.queue.length}</span></button>
-        <button id="player-tab-history" role="tab" aria-selected={player.queueTab === 'history'} aria-controls="player-track-list" tabindex={player.queueTab === 'history' ? 0 : -1} onclick={() => void selectTab('history')}>Recently played <span>{listeningHistory.total}</span></button>
+        <button id="player-tab-history" role="tab" aria-selected={player.queueTab === 'history'} aria-controls="player-track-list" tabindex={player.queueTab === 'history' ? 0 : -1} onclick={() => void selectTab('history')}>{control.mode === 'control' ? 'Phone history' : 'Recently played'} <span>{listeningHistory.total}</span></button>
       </div>
       <div id="player-track-list" aria-busy={player.queueTab === 'history' && listeningHistory.loading} role="tabpanel" aria-labelledby={`player-tab-${player.queueTab}`}>
       {#if player.queueTab === 'history'}

@@ -4,6 +4,10 @@ import { currentPageUrl, serverUrl } from './connection-security'
 import { randomId } from './random-id'
 
 const USER = 'share'
+// What the phone does with the library: control the player on this computer, or play on the phone itself.
+// The link carries it as `m`; the Share drawer shows one code per mode.
+export type ShareMode = 'control' | 'library'
+export const withMode = (link: string, mode: ShareMode) => `${link}&m=${mode}`
 const HTTP_NO_CONTENT = 204
 type ShareUser = Record<string, unknown> & { id: string; userName: string; isAdmin: boolean }
 let operation = 0
