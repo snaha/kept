@@ -18,6 +18,8 @@ interface Window {
     onChange(callback: (status: import('./lib/jobs.svelte').JobsStatus) => void): () => void;
   };
   // The optional LLM assistant (desktop/preload.js). The key is kept by the main process; the window only learns that one exists.
+  // Spotify, playback only (desktop/preload.js). Tokens stay in the main process.
+  musicSpotify?: import('./lib/spotify.svelte').SpotifyBridge;
   musicAssistant?: {
     status(): Promise<import('./lib/assistant.svelte').AssistantStatus>;
     save(change: import('./lib/assistant.svelte').AssistantChange): Promise<import('./lib/assistant.svelte').AssistantStatus>;
@@ -36,6 +38,7 @@ interface Window {
     restart: () => Promise<void>;
     onChange: (callback: (status: DesktopStatus) => void) => () => void;
     lanIp: () => Promise<string>;
+    lanShare?: () => Promise<import('./lib/lan-catalog').LanShare | undefined>;
     setFrame: (on: boolean) => Promise<void>; // reopens the window with or without it
   };
 }

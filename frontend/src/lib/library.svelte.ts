@@ -5,7 +5,7 @@ import { type Collection, type Track } from './music';
 import { localCatalog } from './local-catalog';
 export { album, playlist, localTrack } from './local-catalog';
 import { browseCollections } from './browse-source';
-import { albumPages, artistAlbumsOf, catalogSource, chooseCatalog, setCatalogSelection, trackPagesOf } from './catalog-source.svelte';
+import { albumPages, artistAlbumsOf, catalogSource, chooseCatalog, fallBackToServer, resetCatalogChoice, trackPagesOf } from './catalog-source.svelte';
 
 export type Tile = Collection;
 export const MODES = ['albums', 'playlists'] as const;
@@ -24,6 +24,7 @@ class LibraryState {
 }
 export const library = new LibraryState();
 let localTiles: Tile[] = [], req = 0, pickRequest = 0, listing = true;
+let viewAccount: typeof session.api
 /** The tile a collection ID names here: itself, or the catalog album the music server knows by that ID. */
 export const tileIdOf = (id: string | undefined) => (id === undefined ? undefined : library.aliases.get(id) ?? id);
 
@@ -37,9 +38,9 @@ function publish(preserve: boolean) {
   } else library.tiles = next;
 }
 
-async function allAlbums(type: 'alphabeticalByArtist' | 'newest', mine: number, refresh: boolean) {
+async function allAlbums(type: 'alphabeticalByArtist' | 'newest', mine: number, refresh: boolean, firstPageDeadline?: number) {
   const api = session.api!, out: Tile[] = [];
-  for await (const page of albumPages(api, type)) {
+  for await (const page of albumPages(api, type, firstPageDeadline)) {
     if (mine !== req || api !== session.api) return;
     out.push(...page);
     if (!refresh) { localTiles = out.slice(); publish(true); }
@@ -48,31 +49,35 @@ async function allAlbums(type: 'alphabeticalByArtist' | 'newest', mine: number, 
 }
 export async function setMode(mode: Mode, refresh = false) {
   const api = session.api, mine = ++req;
+  const current = () => mine === req && api === session.api
+  const sameAccount = api === viewAccount
+  const fresh = !refresh || !sameAccount
+  const keepTiles = listing && mode === library.mode && sameAccount
+  if (!sameAccount) resetCatalogChoice()
+  viewAccount = api
   library.mode = mode; library.loading = true; library.error = ''; listing = true;
-  if (!refresh) { localTiles = []; publish(false); }
+  if (!keepTiles) { localTiles = []; publish(false); }
   try {
     if (!api) return;
-    // Only a fresh load picks the catalog. A refresh keeps the one on screen, so it replaces albums in place.
-    if (!refresh) {
-      const selection = await chooseCatalog();
-      if (mine !== req || api !== session.api) return;
-      setCatalogSelection(selection);
-    }
     if (mode === 'albums') {
-      try { await allAlbums('alphabeticalByArtist', mine, refresh); }
+      // A refresh keeps the source already on screen. Playlists have no catalog dependency.
+      const previousSource = catalogSource.active
+      const firstPageDeadline = fresh ? await chooseCatalog(api, current) : undefined
+      if (!current()) return
+      try { await allAlbums('alphabeticalByArtist', mine, keepTiles && previousSource === catalogSource.active, firstPageDeadline) }
       catch (error) {
         // The library's own catalog failed on a fresh load: the music server serves it. A failed refresh keeps what is shown.
-        if (refresh || catalogSource.active !== 'virtual' || mine !== req || api !== session.api) throw error;
-        setCatalogSelection({ active: 'navidrome', fallback: 'failed' }); localTiles = []; publish(false);
-        await allAlbums('alphabeticalByArtist', mine, refresh);
+        if (!fresh || catalogSource.active !== 'virtual' || !current()) throw error;
+        fallBackToServer()
+        await allAlbums('alphabeticalByArtist', mine, false);
       }
     }
     else {
       const result = await localCatalog.playlists(api);
-      if (mine === req && api === session.api) { localTiles = result; publish(refresh); }
+      if (current()) { localTiles = result; publish(keepTiles); }
     }
-    if (mine === req && api === session.api) library.revision++;
-  } catch (error) { if (mine === req) library.error = (error as Error).message; }
+    if (current()) library.revision++;
+  } catch (error) { if (current()) library.error = (error as Error).message; }
   finally { if (mine === req) library.loading = false; }
 }
 

@@ -16,11 +16,14 @@ import { normalizeMusicFolders, prepareMusicRoot, profileMusicFolders } from './
 import { CATALOG_BRIDGE_METHODS, CATALOG_CHANGING_OPERATIONS, createCatalogBridge, validateCatalogBridgeRequest } from '../shared/catalog-bridge.js'
 import { createLibraryService } from './library-service.js'
 import { ResourcePolicy } from './resource-policy.js'
+import { createLanCatalog, createLanShare, LAN_PREFIX } from './lan-catalog.js'
 import { createToolRunner } from '../shared/tool-runner.js'
 import { createHistoryStats } from './tool-services.js'
 import { createAssistant } from './assistant.js'
 import { createAssistantService } from './assistant-service.js'
 import { createAssistantSettings } from './assistant-settings.js'
+import { createSpotifyService, loopbackAuthorize } from './spotify.js'
+import { SPOTIFY_CONSENT, SPOTIFY_SOURCE } from '../shared/spotify-source.js'
 import { CatalogDatabase } from './catalog-database.js'
 import { markUnavailableSources, startCatalogSync } from './catalog-ingest.js'
 import { createTrackPathResolver } from './track-paths.js'
@@ -106,6 +109,8 @@ const HTTP_NOT_FOUND = 404
 const HTTP_SERVER_ERROR = 500
 function createFrontend() {
   return http.createServer((req, res) => {
+    // The read-only catalog for phones: the page's own origin, authenticated per device.
+    if (lanCatalog && req.url?.startsWith(LAN_PREFIX) && lanCatalog.handle(req, res, new URL(req.url, 'http://x').pathname)) return
     const fail = status => {
       if (res.destroyed) return
       if (res.headersSent) res.destroy()
@@ -158,7 +163,7 @@ async function waitFor(url, child) {
 let navidrome;
 let musicDatabase;
 // library.sqlite belongs to the profile, not to the music server: it stays open across server restarts.
-let catalogDatabase, catalogBridge, catalogSync, library
+let catalogDatabase, catalogBridge, catalogSync, library, lanCatalog
 const CATALOG_CHANGE_DELAY_MS = 200
 let catalogChangeTimer
 // features.sqlite holds what the analyser computed. It can be deleted: the library is then analysed again.
@@ -182,6 +187,11 @@ let frontendServer;
 let bootstrapping = true;
 let phase = 'setup', startupError = '', startupWarning = '', startPromise;
 let st, local = '';
+function shareAddresses() {
+  if (phase !== 'ready' || !st?.webPort || !st.port) return undefined
+  const ip = lanIp()
+  return { origin: new URL(`http://${ip}:${st.webPort}`).origin, server: new URL(`http://${ip}:${st.port}`).origin }
+}
 const desktopStatus = () => ({
   phase, error: startupError, warning: startupWarning, onboarding: !config.setupComplete,
   url: local, username: st?.username || '', password: st?.password || '', frame: st?.frame ?? true,
@@ -232,6 +242,7 @@ app.whenReady().then(async () => {
     estimates: createEstimatedTraits({ features: featureDatabase.store, method }),
     soundSimilarity: createSoundSimilarity({ catalog: catalogDatabase.service, features: featureDatabase.store, method }),
   })
+  lanCatalog = createLanCatalog({ bridge: catalogBridge, sharePassword: () => st?.sharePassword, shareAddresses })
   // An unplugged drive keeps its albums and tags: they are shown as unavailable, never dropped.
   void markUnavailableSources({ catalog: catalogDatabase.service, folders: profileMusicFolders(config) }).catch(error => console.error('Kept catalog:', error.message))
   for (const [operation, method] of Object.entries(CATALOG_BRIDGE_METHODS)) ipcMain.handle(`catalog:${operation}`, async (event, ...args) => {
@@ -293,6 +304,27 @@ app.whenReady().then(async () => {
     trusted(event)
     try { return { value: await call(request, event.sender) } } catch (error) { return { error: error.message } }
   })
+  // Spotify, playback only and off until the user signs in with their own client ID. Signing in is the consent;
+  // signing out withdraws it. Its tokens are encrypted here and never reach the window.
+  const spotifyService = createSpotifyService({
+    directory: path.join(profile.directory, 'spotify'), safeStorage,
+    authorize: loopbackAuthorize({ openExternal: url => shell.openExternal(url) }),
+    onChange: status => sendToWindows('spotify:changed', status),
+    onConsent: async value => {
+      await catalogDatabase.service.registerSource(SPOTIFY_SOURCE)
+      await catalogDatabase.service.setConsent({ consent: SPOTIFY_CONSENT, value, decidedAt: Date.now() })
+    },
+  })
+  void spotifyService.init().catch(error => console.error('Kept Spotify:', error.message))
+  const spotifyRequests = {
+    status: () => spotifyService.status(), connect: clientId => spotifyService.connect(clientId), disconnect: () => spotifyService.disconnect(),
+    devices: () => spotifyService.devices(), 'select-device': id => spotifyService.selectDevice(id), search: query => spotifyService.search(query),
+    command: ({ action, value }) => spotifyService.command(action, value), playback: () => spotifyService.playback(),
+  }
+  for (const [name, call] of Object.entries(spotifyRequests)) ipcMain.handle(`spotify:${name}`, async (event, request) => {
+    trusted(event)
+    try { return { value: await call(request) } } catch (error) { return { error: error.message } }
+  })
   for (const method of ['write', 'list', 'clear', 'stats']) ipcMain.handle(`music-history:${method}`, async (event, args) => {
     trusted(event);
     validateHistoryEnvelope(method, args);
@@ -340,6 +372,7 @@ app.whenReady().then(async () => {
   });
   handleDesktop('status', () => desktopStatus());
   handleDesktop('lan-ip', () => lanIp());
+  handleDesktop('lan-share', () => createLanShare(st?.sharePassword, shareAddresses()))
   handleDesktop('choose-folder', async (event) => {
     const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), { title: 'Choose your music folder', defaultPath: config.musicFolder || app.getPath('music'), properties: ['openDirectory'] });
     return result.canceled ? null : normalizeMusicFolders([result.filePaths[0]], profile.directory)[0];
@@ -490,6 +523,7 @@ async function stopServices() {
   const sync = catalogSync
   musicDatabase = null;
   frontendServer = null;
+  lanCatalog?.revokeAll()
   navidrome = null;
   catalogSync = undefined
   // The run in flight is aborted and has left the catalog before the server it reads from goes away.

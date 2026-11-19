@@ -3,6 +3,7 @@
   import { restore, session } from './lib/api.svelte';
   import { library, MODES, pick, setMode, tileIdOf } from './lib/library.svelte';
   import { next, player, prev, toggle } from './lib/player.svelte';
+  import { initSpotify } from './lib/spotify.svelte';
   import Bar from './lib/Bar.svelte';
   import Login from './lib/Login.svelte';
   import { startRuntime } from './lib/runtime';
@@ -25,6 +26,7 @@
 
   onMount(() => { if (!window.desktop) restore().finally(() => (ready = true)); return startRuntime(); });
   onMount(initDesktop);
+  onMount(initSpotify);
   onMount(() => { wake(); return () => clearTimeout(idleTimer); });
   $effect(() => { if (session.api) untrack(() => setMode('albums')); });
   let attempted = false;

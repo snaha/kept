@@ -14,7 +14,7 @@ export type SourceKind =
 export type LicenceId =
   | 'user' | 'CC0-1.0' | 'MIT' | 'CC-BY-4.0' | 'non-commercial' | 'CC-BY-NC-SA-3.0' | 'unknown' | 'proprietary'
 export type SourceNetwork = 'none' | 'lan' | 'internet'
-export type ConsentKey = 'online-lookups' | 'acoustid'
+export type ConsentKey = 'online-lookups' | 'acoustid' | 'spotify'
 export type ConsentState = 'not-asked' | 'granted' | 'denied'
 export type SourceConsentState = ConsentState | 'not-required'
 
