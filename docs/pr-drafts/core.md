@@ -85,7 +85,7 @@ Local validation completed before publication:
 | Agent application regressions | Passed at 1920×1080, 1440×900, 1024×768 and 390×844 |
 | Mac ARM64 portable package | Built and launched successfully |
 
-The earlier native chooser journey combined default and Archive folders into **1,106 songs / 124 albums**. The latest portable package retained both roots across restart, found songs from both through UI search and decoded **KWA - Hopscotch — DJ Jean** (181.7664-second duration), advancing playback with the listening icon active. Pause/resume, seeking, Add while paused, queue/history and missing-artwork fallback were exercised; history survived restart. The ready-to-test portable copy has a blank Data folder for fresh onboarding.
+The earlier native chooser journey combined default and Archive folders into **1,106 songs / 124 albums**. The latest portable package retained both roots across restart, found songs from both through UI search and decoded an archive track. Playback advanced with the listening icon active. Pause/resume, seeking, Add while paused, queue/history and missing-artwork fallback were exercised; history survived restart. The ready-to-test portable copy has a blank Data folder for fresh onboarding.
 
 Latest chooser automation was blocked, so that pass configured authorized paths through the desktop startup API; the native chooser was exercised in the preceding journey. Selected Settings/search/player screenshots were inspected across the required sizes. Complete comparison of every screenshot against approved references remains pending; no references were replaced.
 
