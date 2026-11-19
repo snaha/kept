@@ -58,3 +58,48 @@ export const bootstrap = () => {
     }
   }
 };
+
+// A stand-in for the desktop catalog bridge over the fixture's synthetic albums, installed with ?catalog=bridge.
+// It holds field provenance, locks and one route-authored change set in memory; no catalog is stored.
+export const catalogStandIn = () => {
+  const w = window;
+  if (!new URLSearchParams(location.search).has('catalog')) return;
+  const FIELDS = ['title', 'artist', 'year', 'genre'];
+  const state = { version: 1, overrides: {}, locks: {}, history: [], route: { id: 'route-1', at: 1700000000000, album: 'album-2', undone: false } };
+  let albumsPromise;
+  const load = () => albumsPromise ??= fetch('/rest/getAlbumList2.view?size=500').then(r => r.json()).then(j => j['subsonic-response'].albumList2.album.map((a, i) => ({
+    id: `album:${a.id}`, title: a.name, artist: a.artist, year: a.year, genre: a.genre, favorite: false, availability: 'available', traits: {},
+    links: [{ sourceId: 'navidrome', externalId: a.id }], addedAt: 1700000000 + i, trackCount: a.songCount, version: 1,
+  })));
+  const shape = album => { const o = state.overrides[album.id] ?? {}; return { ...album, ...Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.value])) }; };
+  const sorted = (items, sort) => [...items].sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title) : sort === 'added' ? b.addedAt - a.addedAt : (a.artist ?? '').localeCompare(b.artist ?? '') || a.title.localeCompare(b.title));
+  const tracksOf = album => [1, 2].map(n => ({ id: `occ-${album.id}-${n}`, albumId: album.id, assetId: `asset-${album.id}-${n}`, position: n, track: n, duration: 180, availability: 'available', title: `Catalog song ${album.id.replace(/^album:album-/, '')} take ${n}`, artist: album.artist, links: [{ sourceId: 'navidrome', externalId: `song-${album.id.replace(/^album:album-/, '')}-${n}` }] }));
+  const words = q => q.toLowerCase().split(/\s+/).filter(Boolean);
+  w.musicCatalog = {
+    albums: async () => ({ albums: {} }), setTrait: async () => ({ applied: true }), setFavorite: async () => ({ applied: true }), migrate: async () => ({ migrated: [], pending: [] }),
+    consent: async () => ({}), setConsent: async () => ({}), tool: async () => ({}), onChange: () => () => {},
+    catalogAlbums: async ({ offset = 0, limit = 100, sort = 'artist', artist } = {}) => { const all = sorted((await load()).map(shape).filter(a => artist === undefined || a.artist === artist), sort); return { albums: all.slice(offset, offset + limit), total: all.length, version: state.version }; },
+    catalogAlbum: async ({ albumId }) => { const album = (await load()).map(shape).find(a => a.id === albumId); return { album: album && { ...album, tracks: tracksOf(album) }, version: state.version }; },
+    catalogSearch: async request => {
+      const all = (await load()).map(shape), ws = words(request.query);
+      const hit = a => ws.every(x => `${a.title} ${a.artist}`.toLowerCase().split(/\s+/).some(t => t.startsWith(x)));
+      const albums = all.filter(hit), page = (items, p) => p ? items.slice(p.offset, p.offset + p.limit) : [];
+      const names = [...new Set(all.filter(a => ws.every(x => a.artist.toLowerCase().startsWith(x))).map(a => a.artist))];
+      return { albums: page(albums, request.albums), artists: page(names.map(name => ({ name, albumCount: all.filter(a => a.artist === name).length })), request.artists), tracks: [], trackAlbums: [], version: state.version };
+    },
+    playbackLinks: async ({ assetIds }) => ({
+      links: Object.fromEntries(assetIds.map(id => { const [, a, n] = /^asset-album:album-(\d+)-(\d)$/.exec(id) ?? []; return [id, [{ sourceId: 'navidrome', externalId: `song-${a}-${n}` }]] })),
+      version: state.version,
+    }),
+    albumReview: async ({ albumId }) => {
+      const album = (await load()).find(a => a.id === albumId), o = state.overrides[albumId] ?? {}, l = state.locks[albumId] ?? {};
+      const routed = state.route.album === albumId.replace('album:', '') && !state.route.undone;
+      return { version: state.version, fields: FIELDS.map(field => o[field] ? { field, value: o[field].value, origin: 'user', locked: !!l[field], undoable: true } : routed && field === 'year' ? { field, value: 1984, origin: 'route', by: 'Release lookup', locked: !!l[field], undoable: false } : { field, value: album[field], origin: 'tags', locked: !!l[field], undoable: false }) };
+    },
+    setField: async ({ albumId, field, value }) => { if (state.locks[albumId]?.[field] === 'kept') {} (state.overrides[albumId] ??= {})[field] = { value }; state.version++; return { applied: true }; },
+    lockField: async ({ albumId, field, locked }) => { (state.locks[albumId] ??= {})[field] = locked; state.version++; return { applied: true }; },
+    undoField: async ({ albumId, field }) => { delete state.overrides[albumId]?.[field]; state.version++; return { status: 'undone' }; },
+    activity: async () => ({ total: 1, entries: [{ id: 'change-route-1', at: state.route.at, actor: 'kept', route: 'Release lookup', summary: 'Release lookup set the year of Album 002', undone: state.route.undone, undoable: !state.route.undone, operations: [{ index: 0, label: 'Year', before: '1972', after: '1984', undone: state.route.undone }] }] }),
+    undo: async () => { state.route.undone = true; state.version++; return { status: 'undone' }; },
+  };
+};

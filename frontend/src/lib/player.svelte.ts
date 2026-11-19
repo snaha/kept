@@ -4,7 +4,9 @@ import { readPreference, writePreference } from './preferences';
 import { session, streamUrl } from './api.svelte';
 import { PlaybackController, type PlaybackAdapter } from './playback-controller';
 import { shuffle } from './shuffle';
+import { resolveTrackPlayback, type PlaybackRef } from './playback-ref';
 import type { Track, Collection } from './music';
+import { watchPlaybackActivity } from './playback-activity';
 import { recordHistory, saveHistory, historyTrack, type ListeningContext, type HistoryEntry } from './listening-history.svelte';
 
 export type Order = 'normal' | 'shuffle' | 'random';
@@ -50,11 +52,20 @@ function remember(index: number) {
   recordHistory(historyContext, index, cursor);
 }
 
+const streamOf = (ref: PlaybackRef) => streamUrl(ref.songId)
 function clearWarm() { if (!warmAudio) return; warmAudio.removeAttribute('src'); warmAudio.load(); }
+function scrobble(track: Track, submission: boolean) {
+  const ref = resolveTrackPlayback(track);
+  if (ref) session.api?.scrobble({ id: ref.songId, submission }).catch(() => {});
+}
 const localAdapter: PlaybackAdapter = {
-  available(track) { initPlayback(); if (track.source !== 'local') throw new Error('This build plays local music only.'); if (!session.api || !track.available) throw new Error('Local track unavailable. Check your music library.'); },
-  async prepare(track) { graph?.ctx.resume(); if (audio.src !== streamUrl(track.rawId)) { audio.src = streamUrl(track.rawId); audio.load(); } },
-  async start(track) { localTrack = track; scrobbled = false; audio.currentTime = 0; await audio.play(); session.api?.scrobble({ id: track.rawId, submission: false }).catch(() => {}); },
+  available(track) { initPlayback(); if (track.source !== 'local') throw new Error('This build plays local music only.'); if (!session.api || !track.available || !resolveTrackPlayback(track)) throw new Error('Local track unavailable. Check your music library.'); },
+  async prepare(track) {
+    graph?.ctx.resume();
+    const ref = resolveTrackPlayback(track); if (!ref) throw new Error('Local track unavailable. Check your music library.');
+    const url = streamOf(ref); if (audio.src !== url) { audio.src = url; audio.load(); }
+  },
+  async start(track) { localTrack = track; scrobbled = false; audio.currentTime = 0; await audio.play(); scrobble(track, false); },
   async pause() { audio.pause(); },
   async resume() { graph?.ctx.resume(); await audio.play(); },
   async seek(seconds) { audio.currentTime = seconds; },
@@ -77,8 +88,10 @@ export function setVolume(value: number) {
   if (audio) audio.volume = player.volume / 100;
   writePreference('music.volume', String(player.volume));
 }
-export function collectionPlayback(collection: Pick<Collection, 'id'>) {
-  const current = (player.song?.playbackOrigin?.id || player.song?.albumId) === collection.id;
+export function collectionPlayback(collection: Pick<Collection, 'id' | 'aliases'>) {
+  // A track queued from the music server's catalog names its album by the server's ID.
+  const origin = player.song?.playbackOrigin?.id || player.song?.albumId;
+  const current = origin === collection.id || (!!origin && !!collection.aliases?.includes(origin));
   const loading = player.loadingCollectionId === collection.id || (current && player.pending);
   return { current, loading, listening: current && player.playing && !player.suspended && !player.pending };
 }
@@ -91,7 +104,8 @@ function prepareNext() {
   if (!playbackListeners) return;
   const i = player.order === 'shuffle' ? perm[cursor + 1] : player.index + 1;
   const track = player.queue[i];
-  if (track?.source === 'local') warmAudio.src = streamUrl(track.rawId);
+  const ref = track?.source === 'local' ? resolveTrackPlayback(track) : undefined;
+  if (ref) warmAudio.src = streamOf(ref);
   else clearWarm();
 }
 function blocked(track: Track | undefined) {
@@ -209,15 +223,24 @@ export function setOrder(order: Order, source: () => Grid) {
 async function nextRandom() {
   const grid = randomGrid; if (!grid?.count) return;
   if (player.index < player.queue.length - 1) { void start(player.index + 1); return; }
-  if (++cursor >= perm.length) { perm = shuffle(grid.count); cursor = 0; }
   const mine = ++randomDraw; player.randomRequesting = true;
   try {
-    const track = await grid.song(perm[cursor]);
-    if (mine !== randomDraw) return;
-    if (!track) throw new Error('This collection has no playable music tracks. Skip to continue.');
-    if (blocked(track)) { cursor--; return; }
-    freshHistoryContext();
-    player.queue.push(queueEntry(track)); void start(player.queue.length - 1);
+    // An occurrence at the end of one cycle can also be near the start of the next.
+    const missing = new Set<number>()
+    while (missing.size < grid.count) {
+      if (++cursor >= perm.length) { perm = shuffle(grid.count); cursor = 0 }
+      const occurrence = perm[cursor]
+      if (missing.has(occurrence)) continue
+      const track = await grid.song(occurrence)
+      if (mine !== randomDraw) return
+      if (!track?.available) { missing.add(occurrence); continue }
+      if (blocked(track)) return
+      freshHistoryContext()
+      player.queue.push(queueEntry(track))
+      void start(player.queue.length - 1)
+      return
+    }
+    throw new Error('This collection has no playable music tracks. Skip to continue.');
   } catch (error) { if (mine === randomDraw) fail(error); }
   finally { if (mine === randomDraw) player.randomRequesting = false; }
 }
@@ -305,7 +328,7 @@ listen('timeupdate', () => {
   if (controller.active !== 'local' || player.pending || player.song?.id !== localTrack?.id) return;
   player.time = audio.currentTime; player.duration = audio.duration || localTrack?.duration || 0;
   if (!scrobbled && localTrack && (player.time > player.duration / 2 || player.time > 240)) {
-    scrobbled = true; session.api?.scrobble({ id: localTrack.rawId, submission: true }).catch(() => {});
+    scrobbled = true; scrobble(localTrack, true);
   }
 });
 listen('ended', () => { if (controller.active === 'local' && !player.pending) { playing(false); next(); } });
@@ -315,6 +338,9 @@ listen('error', () => { if (controller.active === 'local') fail(new Error('Local
 const syncPlaying = () => { if (controller.active === 'local' && !player.pending) playing(!audio.paused); };
 listen('pause', syncPlaying);
 listen('play', syncPlaying);
+// Background work on the desktop yields to this element.
+const jobsBridge = window.musicJobs;
+if (jobsBridge) watchPlaybackActivity(audio, report => jobsBridge.reportPlayback(report), playbackListeners.signal);
 
   initMediaSession();
 }

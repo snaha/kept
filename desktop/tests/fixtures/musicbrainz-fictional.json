@@ -1,0 +1,117 @@
+[
+ {
+  "key": "search-recording:salt wind|harbor lights:exact",
+  "value": [
+   "00000000-0000-4000-8000-00000000f001"
+  ]
+ },
+ {
+  "key": "search-recording:lantern row|harbor lights:exact",
+  "value": [
+   "00000000-0000-4000-8000-00000000f001"
+  ]
+ },
+ {
+  "key": "search-recording:quiet harbor|harbor lights:exact",
+  "value": [
+   "00000000-0000-4000-8000-00000000f001"
+  ]
+ },
+ {
+  "key": "search-recording:tin roof rain|harbor lights:exact",
+  "value": [
+   "00000000-0000-4000-8000-00000000f001"
+  ]
+ },
+ {
+  "key": "search-recording:slow tide home|harbor lights:exact",
+  "value": [
+   "00000000-0000-4000-8000-00000000f001"
+  ]
+ },
+ {
+  "key": "search-recording:copper sky|harbor lights:exact",
+  "value": [
+   "00000000-0000-4000-8000-00000000f001"
+  ]
+ },
+ {
+  "key": "search-recording:low fog morning|harbor lights:exact",
+  "value": [
+   "00000000-0000-4000-8000-00000000f001"
+  ]
+ },
+ {
+  "key": "search-recording:last ferry out|harbor lights:exact",
+  "value": [
+   "00000000-0000-4000-8000-00000000f001"
+  ]
+ },
+ {
+  "key": "release:00000000-0000-4000-8000-00000000f001",
+  "value": {
+   "id": "00000000-0000-4000-8000-00000000f001",
+   "title": "Paper Lanterns",
+   "artist": "Harbor Lights",
+   "date": "2001-03-09",
+   "status": "Official",
+   "releaseGroupId": "00000000-0000-4000-8000-00000000f002",
+   "firstReleaseDate": "2001-03-09",
+   "media": [
+    {
+     "position": 1,
+     "tracks": [
+      {
+       "position": 1,
+       "title": "Salt Wind",
+       "length": 1000,
+       "recordingId": "00000000-0000-4000-8000-000000000100"
+      },
+      {
+       "position": 2,
+       "title": "Lantern Row",
+       "length": 1050,
+       "recordingId": "00000000-0000-4000-8000-000000000101"
+      },
+      {
+       "position": 3,
+       "title": "Quiet Harbor",
+       "length": 1100,
+       "recordingId": "00000000-0000-4000-8000-000000000102"
+      },
+      {
+       "position": 4,
+       "title": "Tin Roof Rain",
+       "length": 1150,
+       "recordingId": "00000000-0000-4000-8000-000000000103"
+      },
+      {
+       "position": 5,
+       "title": "Slow Tide Home",
+       "length": 1200,
+       "recordingId": "00000000-0000-4000-8000-000000000104"
+      },
+      {
+       "position": 6,
+       "title": "Copper Sky",
+       "length": 1250,
+       "recordingId": "00000000-0000-4000-8000-000000000105"
+      },
+      {
+       "position": 7,
+       "title": "Low Fog Morning",
+       "length": 1300,
+       "recordingId": "00000000-0000-4000-8000-000000000106"
+      },
+      {
+       "position": 8,
+       "title": "Last Ferry Out",
+       "length": 1350,
+       "recordingId": "00000000-0000-4000-8000-000000000107"
+      }
+     ]
+    }
+   ]
+  }
+ }
+]

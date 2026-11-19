@@ -1,6 +1,7 @@
 import type { Collection, Source, Track } from './music';
 export type CatalogSearchRequest = { query: string; albumCount: number; albumOffset: number; artistCount: number; artistOffset: number; songCount: number; songOffset: number };
-export type CatalogSearchPage = { collections: Collection[]; artists: Collection[]; tracks: Track[] };
+// related: the albums of the tracks found, when they are not among the collections found.
+export type CatalogSearchPage = { collections: Collection[]; artists: Collection[]; tracks: Track[]; related?: Collection[] };
 export interface CatalogProvider<Client> {
   readonly source: Source;
   readonly capabilities: { search: boolean; playlists: boolean; pagedAlbums: boolean };

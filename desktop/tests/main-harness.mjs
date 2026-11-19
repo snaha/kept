@@ -19,7 +19,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
   const directory = await mkdtemp(path.join(os.tmpdir(), 'music-main-'));
   const key = crypto.randomUUID();
   const state = {
-    directory, trace: [], windows: [], handlers: new Map(), children: [], databases: [],
+    directory, trace: [], windows: [], handlers: new Map(), children: [], databases: [], catalogs: [],
     config: { setupComplete, musicFolders: [], musicFolder: '', source: 'empty' },
     profile: { name: 'review', root: directory, directory: path.join(directory, 'profile'), existingDirectory: path.join(directory, 'normal'), existing: false, portable: true },
     app: new EventEmitter(), migrationError, saveError: undefined,
@@ -58,7 +58,8 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
         maximize() {} isVisible() { return this.visible; }
         static getAllWindows() { return state.windows; }
       }
-      export const ipcMain = { handle(name, fn) { state.handlers.set(name, fn); } };
+      export const ipcMain = { handle(name, fn) { state.handlers.set(name, fn); }, on() {} };
+      export const utilityProcess = { fork() { throw new Error('No worker process in this fixture'); } };
       export const protocol = { registerSchemesAsPrivileged() {}, handle() {} };
       export const Menu = { buildFromTemplate: () => [], setApplicationMenu() {} };
       export const dialog = { showErrorBox(_title, message) { state.fatal = message; } };
@@ -90,6 +91,28 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
         async close() { this.closed = true; }
       }
     `,
+    catalog: `${access}
+      export class CatalogDatabase {
+        constructor(file) {
+          this.file = file
+          this.calls = []
+          const answers = { getConsent: { 'online-lookups': 'not-asked', acoustid: 'not-asked' }, listSources: { sources: [] }, listAlbums: { albums: [], total: 0 }, listCatalogAlbums: { albums: [], total: 0, version: 0 } }
+          this.service = new Proxy({}, { get: (_target, method) => async request => { this.calls.push([method, request]); return answers[method] ?? {} } })
+          this.store = this.service
+          state.catalogs.push(this)
+        }
+        async close() { this.closed = true }
+      }
+    `,
+    library: `
+      ${access}
+      export function createLibraryService({ onCatalogChange }) {
+        state.publishRepair = onCatalogChange
+        return { hashJobs: { prefetch: async () => {}, hash: async () => { throw new Error('No audio in this fixture') } },
+          reconstruct: { async enqueuePending() {}, async interrupt() { state.interruptedAfter = state.catalogs[0].calls.at(-1) } },
+          async start() {}, async stop() {}, async status() { return { mode: 'idle', classes: {} } }, reportPlayback() {}, playbackEnded() {} }
+      }
+    `,
     child: `${access}
       import { EventEmitter } from 'node:events';
       export function spawn(_file, _args, options) {
@@ -103,7 +126,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
       }
     `,
   };
-  const mapping = { electron: 'electron', './profiles.js': 'profiles', './storage-migration.js': 'migration', './music-database.js': 'database', 'node:child_process': 'child' };
+  const mapping = { electron: 'electron', './profiles.js': 'profiles', './storage-migration.js': 'migration', './music-database.js': 'database', './catalog-database.js': 'catalog', './library-service.js': 'library', 'node:child_process': 'child' };
   const dispose = async () => {
     state.finishMigration();
     state.app.quit();
@@ -119,7 +142,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
       entryPoints: [new URL('../main.js', import.meta.url).pathname], outfile,
       bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
       plugins: [{ name: 'main-fixture', setup(builder) {
-        builder.onResolve({ filter: /^(electron|node:child_process|\.\/(profiles|storage-migration|music-database)\.js)$/ }, ({ path: name }) => ({ path: mapping[name], namespace: 'fixture' }));
+        builder.onResolve({ filter: /^(electron|node:child_process|\.\/(profiles|storage-migration|music-database|catalog-database|library-service)\.js)$/ }, ({ path: name }) => ({ path: mapping[name], namespace: 'fixture' }));
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path: name }) => ({ contents: mocks[name], loader: 'js' }));
       } }],
     });

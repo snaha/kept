@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { keyboardScope } from './keyboard';
   import { isElementVisible } from './dom';
   import Button from './ui/button.svelte';
   import ProfileSettings from './ProfileSettings.svelte';
+  import LookupToggle from './lookup-toggle.svelte';
+  import { consent, setLookupConsent } from './consent.svelte';
+  import ActivityPanel from './activity-panel.svelte';
+  import { activity, loadActivity, loadOlderActivity, undoActivity } from './activity.svelte'
   import { desktop } from './desktop.svelte';
   import { session } from './api.svelte';
+  import { catalogSource, setCatalogEnabled, type CatalogFallback } from './catalog-source.svelte';
+  import { library, setMode } from './library.svelte';
   import { downloadPlaybackLog } from './playback-log';
   import { bg, clearBackground, importBackground } from './background.svelte';
 
@@ -17,8 +23,58 @@
   let backgroundFile = $state<HTMLInputElement>(null!);
   const tabs = [
     { id: 'appearance', label: 'Appearance' },
-    { id: 'advanced', label: 'Advanced' }
+    { id: 'advanced', label: 'Advanced' },
+    // The change ledger lives in the desktop library, so there is nothing to list in a browser.
+    ...(window.musicCatalog ? [{ id: 'activity', label: 'Activity' }] : [])
   ];
+  // The library's own catalog exists in the desktop app. Turning it on or off loads the library again, as the user asked.
+  const catalogOffered = typeof window.musicCatalog?.catalogAlbums === 'function';
+  const CATALOG_STATUS: Record<CatalogFallback, string> = {
+    '': 'In use.', off: '', unavailable: '',
+    empty: 'Nothing has been read yet, so the music server\'s list is shown for now.',
+    'catching-up': 'Your files are still being read, so the music server\'s list is shown for now.',
+    failed: 'Your library could not be read, so the music server\'s list is shown.',
+  };
+  function chooseCatalogSetting(enabled: boolean) { setCatalogEnabled(enabled); void setMode(library.mode); }
+  const ACTIVITY_REFRESH_DELAY_MS = 300
+  $effect(() => {
+    if (activeTab !== 'activity') return
+    untrack(() => void loadActivity())
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let needsRefresh = false
+    let disposed = false
+    function scheduleRefresh() {
+      needsRefresh = true
+      if (timer !== undefined) return
+      timer = setTimeout(async () => {
+        needsRefresh = false
+        await loadActivity()
+        timer = undefined
+        if (needsRefresh && !disposed) scheduleRefresh()
+      }, ACTIVITY_REFRESH_DELAY_MS)
+    }
+    const unwatch = window.musicCatalog?.onChange(scheduleRefresh)
+    return () => {
+      disposed = true
+      clearTimeout(timer)
+      unwatch?.()
+    }
+  })
+  async function showOlder(event: MouseEvent) {
+    const button = event.currentTarget
+    await loadOlderActivity()
+    await tick()
+    if (button instanceof HTMLElement && !button.isConnected && document.activeElement === document.body) {
+      content?.focus({ preventScroll: true })
+    }
+  }
+  // The Undo button that was pressed gives way to "Undone". Focus stays in the panel instead of falling out of it.
+  async function undo(id: string, operation?: number) {
+    const done = undoActivity(id, operation);
+    await tick();
+    if (!dialog.contains(document.activeElement) || document.activeElement === document.body) content.focus({ preventScroll: true });
+    await done;
+  }
 
   onMount(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -106,6 +162,16 @@
           </details>
         </section>
 
+      {:else if activeTab === 'activity'}
+        <ActivityPanel entries={activity.entries} onundo={undo} />
+        {#if activity.error}<p class="err" role="alert">{activity.error}</p>{/if}
+        {#if activity.entries.length < activity.total}
+          <div class="activity-pagination">
+            <Button variant="outline" size="sm" aria-disabled={activity.loadingOlder} onclick={showOlder}>
+              {activity.loadingOlder ? 'Loading…' : 'Show older'}
+            </Button>
+          </div>
+        {/if}
       {:else}
         <section class="advanced" aria-labelledby="advanced-title">
           <h2 id="advanced-title">Advanced &amp; network</h2>
@@ -113,6 +179,14 @@
             <ProfileSettings portalTarget={dialog} />
             <label><input type="checkbox" checked={desktop.status?.frame ?? true} onchange={(event) => window.desktop!.setFrame(event.currentTarget.checked)} /> Native window frame</label>
           {/if}
+          {#if catalogOffered}
+            <div class="catalog-choice">
+              <label><input type="checkbox" checked={catalogSource.enabled} onchange={(event) => chooseCatalogSetting(event.currentTarget.checked)} /> Browse albums as Kept identified them</label>
+              <p class="help">Albums follow your files, so they keep their tags when the music server renames them, and corrections can be undone. Turn off to browse the music server's own list. <span role="status">{catalogSource.enabled ? CATALOG_STATUS[catalogSource.fallback] : ''}</span></p>
+            </div>
+          {/if}
+          <LookupToggle value={consent.lookup} onchange={setLookupConsent} />
+          {#if consent.error}<p class="err" role="alert">{consent.error}</p>{/if}
           <div class="server">
             <span class="k">Server</span>
             <span class="v">{session.base}</span>
@@ -163,6 +237,7 @@
   .tabs button[aria-selected="true"]::after { position: absolute; right: 10px; bottom: -1px; left: 10px; height: 2px; background: var(--ui-accent); content: ''; }
   .content { flex: 1; min-height: 0; margin: 6px 6px 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable both-edges; scrollbar-width: thin; scrollbar-color: var(--ui-border) var(--ui-surface); scroll-padding-block: 18px; }
   .panel-body { padding: 18px 14px 24px; }
+  .activity-pagination { margin-block-start: 0.75rem; overflow-anchor: none }
   section { display: flex; flex-direction: column; gap: 8px; }
   label { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; }
   input[type="checkbox"] { flex-shrink: 0; margin: 0; width: 18px; height: 18px; accent-color: var(--ui-accent); cursor: pointer; }
@@ -187,6 +262,8 @@
   .k { color: var(--ui-text-muted); }
   .v { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
   .server { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+  .catalog-choice { display: flex; flex-direction: column; gap: 2px; }
+  .catalog-choice .help { padding-left: 30px; }
   @media (max-width: 600px) {
     .settings-dialog { width: calc(100vw - 20px); height: min(640px, calc(100dvh - 20px)); }
     .header { padding: 16px 18px 12px; }

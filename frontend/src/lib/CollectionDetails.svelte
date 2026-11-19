@@ -10,6 +10,8 @@
   import { metadata, saveMetadata } from './discovery.svelte';
   import CollectionPlayback from './CollectionPlayback.svelte';
   import AlbumTraits from './AlbumTraits.svelte';
+  import AlbumReview from './album-review.svelte';
+  import { isVirtualCollection } from './virtual-catalog';
   import Icon from './ui/icon.svelte';
   import AlbumView from './album-view.svelte';
   import type { Track } from './music';
@@ -21,7 +23,7 @@
   onMount(() => { artworkActive = true; return () => { artworkActive = false; }; });
   const requestKey = $derived(`${tile.id}:${tile.available}:${tile.indexing}:${tile.count}:${tile.incomplete}:${library.revision}`);
   let loadedId = '';
-  let tracks = $state.raw<Track[]>([]), loading = $state(true), error = $state(''), query = $state(''), actions = $state(false), preferences = $state(false), palette = $state(fallbackPalette);
+  let tracks = $state.raw<Track[]>([]), loading = $state(true), error = $state(''), query = $state(''), actions = $state(false), preferences = $state(false), reviewing = $state(false), palette = $state(fallbackPalette);
   const shown = $derived(tracks.map((track, index) => ({ track, index })).filter(({ track }) => `${track.title} ${track.artist ?? ''}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
   const totalSeconds = $derived(tracks.reduce((sum, track) => sum + (track.duration ?? 0), 0));
   const genreYear = $derived([...info.genres, ...(info.year ? [String(info.year)] : [])].join(' • '));
@@ -65,12 +67,15 @@
     event.preventDefault()
     event.stopPropagation()
     if (preferences) preferences = false
+    else if (reviewing) reviewing = false
     else if (actions) {
       actions = false
       document.querySelector<HTMLButtonElement>('[aria-label="Album menu"]')?.focus()
     } else if (query) query = ''
     else onclose()
   }
+  // Provenance, corrections and undo exist for albums of the library's own catalog, in the desktop app.
+  const reviewable = $derived(tile.kind === 'album' && isVirtualCollection(tile) && typeof window.musicCatalog?.albumReview === 'function');
   const fmt = (s = 0) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   const total = (s: number) => { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr ${m % 60} min`; };
 </script>
@@ -85,6 +90,7 @@
           {#if actions}<div class="action-menu" id="album-actions" role="menu" aria-label="Album actions" use:keyboardScope={actionKeys}>
             <button role="menuitem" disabled={!tracks.some(track => track.available)} onclick={() => { void addCollection(tile); actions = false; }}>Add to queue</button>
             <button role="menuitem" onclick={() => { preferences = !preferences; actions = false; }}>Album preferences &amp; Dig tags</button>
+            {#if reviewable}<button role="menuitem" onclick={() => { reviewing = !reviewing; actions = false; menuTrigger?.focus({ preventScroll: true }); }}>Album details &amp; changes</button>{/if}
             {#if session.admin}<button role="menuitem" onclick={() => openOverlay('share')}>Share</button>{/if}
             <button role="menuitem" onclick={() => openOverlay('visualizer')}>Visualizer</button>
           </div>{/if}
@@ -100,6 +106,7 @@
           if (event.currentTarget.getAttribute('src') === coverImage.url) coverImage = { ...coverImage, failed: true };
         }} />
       {:else}<div class="no-art detail-cover" role="img" aria-label="Artwork unavailable for {tile.title}">{tile.title}</div>{/if}
+      {#if reviewing && reviewable}<AlbumReview albumId={tile.rawId} title={tile.title} />{/if}
       {#if preferences}<AlbumTraits {tile} />{/if}
     </div>
   {/snippet}

@@ -62,3 +62,21 @@ test('worker serializes writes and queries and closes only after queued writes',
     try { assert.equal(reopened.list({ scope: 'a' }).total, 2, 'shutdown drains accepted writes'); } finally { reopened.close(); }
   } finally { await database.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test('history rows carry an optional catalog ref of either kind and legacy rows still load', async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'music-history-ref-'));
+  const store = new MusicStore(path.join(directory, 'music.sqlite'));
+  try {
+    const asset = { ...track, id: 'local:track:occurrence:a:b', rawId: 'asset:b', catalogRef: { kind: 'asset', id: 'asset:b' } };
+    const navidrome = { ...track, catalogRef: { kind: 'navidrome', id: '1' } };
+    const mixed = { id: 'mixed', queue: [track, asset, navidrome], order: 'normal', permutation: [] };
+    store.write({ scope: 'a', contexts: [mixed], entries: [entry('legacy', 'mixed', 1000, 0), entry('virtual', 'mixed', 2000, 1), entry('nd', 'mixed', 3000, 2)] });
+    const rows = store.list({ scope: 'a' }).entries;
+    assert.deepEqual(rows.map(row => row.id), ['nd', 'virtual', 'legacy']);
+    assert.deepEqual(rows[1].context.queue[1].catalogRef, { kind: 'asset', id: 'asset:b' });
+    assert.equal(rows[2].context.queue[0].catalogRef, undefined, 'a legacy row stays without a ref');
+    const bad = { ...mixed, id: 'bad', queue: [{ ...track, catalogRef: { kind: 'file', id: '/etc/passwd' } }] };
+    assert.throws(() => store.write({ scope: 'a', contexts: [bad], entries: [entry('bad-entry', 'bad', 4000, 0)] }), /Invalid history batch/);
+    assert.equal(store.list({ scope: 'a' }).total, 3);
+  } finally { store.close(); await rm(directory, { recursive: true, force: true }); }
+});

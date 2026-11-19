@@ -1,0 +1,12 @@
+// The identity-spine and tool contracts, as the frontend sees them.
+export type * from '../../../shared/catalog'
+export type * from '../../../shared/tools'
+export type * from '../../../shared/catalog-bridge'
+export type * from '../../../shared/catalog-ledger'
+export type * from '../../../shared/catalog-projection'
+export type * from '../../../shared/reconstruct'
+export type * from '../../../shared/reconstruct-match'
+export * from '../../../shared/catalog-rules'
+export * from '../../../shared/tool-contracts'
+export * from '../../../shared/catalog-bridge'
+export { createFakeCatalogService } from '../../../shared/catalog-fake'

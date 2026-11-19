@@ -1,5 +1,5 @@
 import { validateDesktopRequest, validateHistoryEnvelope } from '../shared/contracts.js';
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session as electronSession, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session as electronSession, shell, utilityProcess } from 'electron';
 import { MusicDatabase } from './music-database.js';
 import { closeFrontend, isMusicDocument, listenFrontend, stopMusicServer } from './service-lifecycle.js';
 import { spawn } from 'node:child_process';
@@ -13,11 +13,22 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { assertProfileClosed, copyProfile, launchProfile, listProfiles, loadProfile, lockProfile, newProfile, readJSON, rememberProfile, saveProfile, selectedProfile } from './profiles.js';
 import { migrateStorage } from './storage-migration.js';
 import { normalizeMusicFolders, prepareMusicRoot, profileMusicFolders } from './music-folders.js';
+import { CATALOG_BRIDGE_METHODS, CATALOG_CHANGING_OPERATIONS, createCatalogBridge, validateCatalogBridgeRequest } from '../shared/catalog-bridge.js'
+import { createLibraryService } from './library-service.js'
+import { ResourcePolicy } from './resource-policy.js'
+import { CatalogDatabase } from './catalog-database.js'
+import { markUnavailableSources, startCatalogSync } from './catalog-ingest.js'
+import { createTrackPathResolver } from './track-paths.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, 'dist');
 const navidromeBin = app.isPackaged ? path.join(process.resourcesPath, 'navidrome') : path.join(here, 'bin', 'navidrome');
 const page = 'app://music/';
+// Kept is offline by default: Navidrome never calls out; consented lookups are Kept's own.
+const OFFLINE_ENV = {
+  ND_ENABLEEXTERNALSERVICES: 'false', ND_LASTFM_ENABLED: 'false', ND_DEEZER_ENABLED: 'false', ND_LISTENBRAINZ_ENABLED: 'false',
+  ND_PLUGINS_ENABLED: 'false', ND_COVERARTPRIORITY: 'cover.*, folder.*, front.*, embedded', ND_ARTISTARTPRIORITY: 'artist.*, album/artist.*',
+}
 // pnpm dev:hot: the Vite dev server answers app://music/ so the window keeps its origin and gets hot reload
 const devServer = app.isPackaged ? '' : process.env.MUSIC_DEV_SERVER || '';
 async function fetchDevServer(target, tries = 50) { // Vite may still be starting when the window opens
@@ -135,6 +146,24 @@ async function waitFor(url, child) {
 
 let navidrome;
 let musicDatabase;
+// library.sqlite belongs to the profile, not to the music server: it stays open across server restarts.
+let catalogDatabase, catalogBridge, catalogSync, library
+const CATALOG_CHANGE_DELAY_MS = 200
+let catalogChangeTimer
+
+// Job handlers run in a utility process of their own, so the window and the catalog never share a core with heavy work.
+const electronFork = (file, name) => {
+  const child = utilityProcess.fork(fileURLToPath(file), [], { serviceName: `Kept ${name}`, stdio: 'inherit' })
+  return { post: message => child.postMessage(message), onMessage: callback => child.on('message', callback), onExit: callback => child.on('exit', callback), kill: () => child.kill() }
+}
+const sendToWindows = (channel, value) => { for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, value) }
+function broadcastRepairs() {
+  if (shuttingDown || catalogChangeTimer !== undefined) return
+  catalogChangeTimer = setTimeout(() => {
+    catalogChangeTimer = undefined
+    sendToWindows('catalog:changed')
+  }, CATALOG_CHANGE_DELAY_MS)
+}
 
 let frontendServer;
 let bootstrapping = true;
@@ -173,6 +202,43 @@ app.whenReady().then(async () => {
   st = readJSON(path.join(dataDir, 'credentials.json'), null);
   if (profileMusicFolders(config).some(folder => !existsSync(folder))) { config.setupComplete = false; startupError = 'A music folder is unavailable. Reconnect its drive or remove it before opening your library.'; }
   phase = config.setupComplete ? 'starting' : 'setup';
+  catalogDatabase = new CatalogDatabase(path.join(profile.directory, 'library.sqlite'))
+  catalogBridge = createCatalogBridge(catalogDatabase.service)
+  // An unplugged drive keeps its albums and tags: they are shown as unavailable, never dropped.
+  void markUnavailableSources({ catalog: catalogDatabase.service, folders: profileMusicFolders(config) }).catch(error => console.error('Kept catalog:', error.message))
+  for (const [operation, method] of Object.entries(CATALOG_BRIDGE_METHODS)) ipcMain.handle(`catalog:${operation}`, async (event, ...args) => {
+    trusted(event)
+    try {
+      const request = validateCatalogBridgeRequest(operation, args)
+      const value = await catalogBridge[method](request)
+      // An undo, a correction or a lock changes what every window shows: titles, provenance and the Activity list.
+      if (CATALOG_CHANGING_OPERATIONS.includes(operation) && (value.status === 'undone' || value.applied)) for (const win of BrowserWindow.getAllWindows()) win.webContents.send('catalog:changed')
+      if (operation === 'set-consent') {
+        // Running jobs must drop their saved permission and reread the cluster.
+        if (request.consent === 'online-lookups' && request.value === 'denied') await library.reconstruct.interrupt()
+        void queueReconstruction()
+      }
+      return { value }
+    } catch (error) { return { error: error.message } }
+  })
+  // Background jobs wait for playback: the window reports its audio element, the library worker obeys.
+  // Measuring the policy against its absence: KEPT_JOBS_POLICY=off lets background work run at full tilt.
+  const policy = new ResourcePolicy()
+  policy.enabled = process.env.KEPT_JOBS_POLICY !== 'off'
+  library = createLibraryService({
+    store: catalogDatabase.store, fork: electronFork, policy, appVersion: app.getVersion(),
+    onProgress: status => sendToWindows('jobs:changed', status),
+    onCatalogChange: broadcastRepairs,
+    onError: error => console.error('Kept jobs:', error.message),
+  })
+  void library.start().catch(error => console.error('Kept jobs:', error.message))
+  ipcMain.on('jobs:playback', (event, report) => {
+    try { trusted(event); library.reportPlayback(report) } catch (error) { console.error('Kept jobs:', error.message) }
+  })
+  ipcMain.handle('jobs:status', async event => {
+    trusted(event)
+    try { return { value: await library.status() } } catch (error) { return { error: error.message } }
+  })
   for (const method of ['write', 'list', 'clear', 'stats']) ipcMain.handle(`music-history:${method}`, async (event, args) => {
     trusted(event);
     validateHistoryEnvelope(method, args);
@@ -189,6 +255,9 @@ app.whenReady().then(async () => {
     });
     const contents = win.webContents;
     win.on('page-title-updated', event => event.preventDefault());
+    // A window that reloads or dies is not playing any more.
+    contents.on('did-start-navigation', details => { if (details.isMainFrame) library?.playbackEnded() });
+    contents.on('render-process-gone', () => library?.playbackEnded());
     if (process.env.MUSIC_DIAGNOSTICS === '1') {
       contents.on('console-message', event => { if (event.message?.startsWith('[music-metrics]') || event.level === 'error') console.log(event.message, event.sourceId, event.lineNumber); });
       contents.once('did-finish-load', () => void contents.executeJavaScript(`(() => {
@@ -290,7 +359,7 @@ app.whenReady().then(async () => {
         st = await state(dataDir); local = `http://127.0.0.1:${st.port}`;
         const child = spawn(navidromeBin, [], {
           stdio: 'inherit', env: { ...process.env, ND_ADDRESS: '0.0.0.0', ND_PORT: String(st.port), ND_DATAFOLDER: dataDir, ND_CACHEFOLDER: path.join(dataDir, 'cache'), ND_MUSICFOLDER: music,
-            ND_DEVAUTOCREATEADMINPASSWORD: st.password, ND_ENABLEINSIGHTSCOLLECTOR: 'false', ND_SCANNER_SCHEDULE: '1h', ND_SCANNER_FOLLOWSYMLINKS: 'true', ND_LOGLEVEL: 'warn' },
+            ND_DEVAUTOCREATEADMINPASSWORD: st.password, ND_ENABLEINSIGHTSCOLLECTOR: 'false', ...OFFLINE_ENV, ND_SCANNER_SCHEDULE: '1h', ND_SCANNER_FOLLOWSYMLINKS: 'true', ND_SUBSONIC_DEFAULTREPORTREALPATH: 'true', ND_LOGLEVEL: 'warn' },
         });
         navidrome = child;
         child.on('error', error => { if (navidrome !== child) return; startupError = `Cannot start the bundled music server: ${error.message}`; phase = 'error'; changed(); });
@@ -299,6 +368,7 @@ app.whenReady().then(async () => {
         frontendServer = createFrontend();
         await listenFrontend(frontendServer, st.webPort);
         musicDatabase = new MusicDatabase(path.join(profile.directory, 'music.sqlite'));
+        if (folders.length) startCatalog(music, config.musicFolders)
         phase = 'ready';
         if (options.source) config.setupComplete = true;
         saveProfile(profile, config); changed();
@@ -311,6 +381,22 @@ app.whenReady().then(async () => {
     startPromise = task;
     try { return await task; }
     finally { if (startPromise === task) startPromise = null; }
+  }
+  const queueReconstruction = () => library?.reconstruct?.enqueuePending({ folders: profileMusicFolders(config) })?.catch(error => console.error('Kept jobs:', error.message))
+  // After every finished scan the identity spine learns the files Navidrome found.
+  function startCatalog(root, folders) {
+    const resolver = createTrackPathResolver({ root, folders, combined: Boolean(config.combinedMusicFolders) })
+    catalogSync = startCatalogSync({
+      connection: { base: local, username: st.username, password: st.password }, catalog: catalogDatabase.store, folders,
+      resolveFile: song => resolver.resolve(song).file,
+      prefetchHashes: library.hashJobs.prefetch, hashFile: library.hashJobs.hash,
+      onChange: result => {
+        for (const win of BrowserWindow.getAllWindows()) win.webContents.send('catalog:changed')
+        // A finished scan: albums that are new or changed go through the reconstruction ladder.
+        if (result) void queueReconstruction()
+      },
+      onError: error => console.error('Kept catalog:', error.message),
+    })
   }
   handleDesktop('start', (_event, options) => start(options));
   handleDesktop('change-folder', async (event, mode = 'replace', folder) => {
@@ -345,10 +431,14 @@ function scheduleRelaunch(args) {
 }
 async function stopServices() {
   const database = musicDatabase, server = frontendServer, child = navidrome;
+  const sync = catalogSync
   musicDatabase = null;
   frontendServer = null;
   navidrome = null;
-  const results = await Promise.allSettled([database?.close(), closeFrontend(server), stopMusicServer(child)]);
+  catalogSync = undefined
+  // The run in flight is aborted and has left the catalog before the server it reads from goes away.
+  const stopCatalog = async () => { await sync?.stop() }
+  const results = await Promise.allSettled([database?.close(), closeFrontend(server), stopMusicServer(child), stopCatalog()]);
   for (const result of results) if (result.status === 'rejected') console.error('Kept cleanup:', result.reason);
 }
 
@@ -358,8 +448,11 @@ app.on('before-quit', event => {
   event.preventDefault();
   if (shuttingDown) return;
   shuttingDown = true; app.isQuitting = true;
+  clearTimeout(catalogChangeTimer)
   void (async () => {
     await stopServices();
+    await library?.stop().catch(error => console.error('Kept cleanup:', error))
+    await catalogDatabase?.close().catch(error => console.error('Kept cleanup:', error))
     if (app.isReady() && hasInstanceLock) electronSession.defaultSession.flushStorageData();
   })().finally(() => { shutdownComplete = true; app.quit(); });
 });

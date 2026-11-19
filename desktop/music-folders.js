@@ -24,11 +24,13 @@ export function normalizeMusicFolders(folders, dataDirectory) {
   return [...new Set(roots)].filter((root, index, unique) => !unique.some((parent, other) => other !== index && contains(parent, root)));
 }
 
+export const musicFolderLinkName = folder => `folder-${createHash('sha256').update(folder).digest('hex').slice(0, 16)}`;
+
 export function prepareMusicRoot(directory, folders, combined = false) {
   if (folders.length === 1 && !combined) return folders[0];
   const root = path.join(directory, 'music-folders');
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  const links = new Map(folders.map(folder => [`folder-${createHash('sha256').update(folder).digest('hex').slice(0, 16)}`, folder]));
+  const links = new Map(folders.map(folder => [musicFolderLinkName(folder), folder]));
   for (const name of readdirSync(root)) {
     const file = path.join(root, name);
     if (!/^folder-[a-f\d]{16}$/.test(name) || !lstatSync(file).isSymbolicLink()) throw new Error('The music-folder index contains an unexpected file. Start a fresh profile to rebuild it.');

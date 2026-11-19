@@ -6,7 +6,7 @@ export type BrowseInput = {
   show: string; favoritesOnly: boolean; coversOnly: boolean; sort: string; direction: number; randomSeed: number;
   colorOrder: Record<string, number>; digActive: boolean;
   metadata: (tile: Collection) => Metadata; score: (tile: Collection) => number;
-  tagged: (tile: Collection) => boolean; plays: (id: string) => number;
+  tagged: (tile: Collection) => boolean; plays: (tile: Collection) => number;
 };
 export type BrowseOrder = { key: string; ids: string[] };
 const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
@@ -33,7 +33,7 @@ export function selectBrowseCollections(input: BrowseInput): Collection[] {
     recent: (a, b) => (b.addedAt ?? '').localeCompare(a.addedAt ?? ''),
     title, artist: (a, b) => collator.compare(a.sub, b.sub) || title(a, b),
     year: (a, b) => (input.metadata(a).year ?? 10000) - (input.metadata(b).year ?? 10000) || title(a, b),
-    plays: (a, b) => input.plays(b.id) - input.plays(a.id) || title(a, b),
+    plays: (a, b) => input.plays(b) - input.plays(a) || title(a, b),
     color: (a, b) => (input.colorOrder[a.id] ?? 361) - (input.colorOrder[b.id] ?? 361) || title(a, b),
     random: (a, b) => randomOrder(a.id, input.randomSeed) - randomOrder(b.id, input.randomSeed),
   };

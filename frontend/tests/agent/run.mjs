@@ -246,7 +246,14 @@ try {
     assert(`document.activeElement.id==='settings-tab-advanced' && document.activeElement.getAttribute('aria-selected')==='true'`, 'Settings arrows must focus and select core categories');
     assert(`!window.spotify && !window.spotifyCapture && !document.querySelector('#settings-tab-spotify') && document.querySelector('.profile-settings').innerText.includes('/synthetic/Music')`, 'Core Settings must expose local folders without provider setup');
     run('click', '.profile-settings button:text-is("Add music folder")');
+    run('wait', '--fn', `document.querySelector('.consent-dialog')?.open`);
+    assert(`window.__auditDesktopCommands.every(command=>command[0]!=='changeFolder') && document.querySelector('.consent-dialog').matches(':modal')`, 'Adding a folder must ask the lookup question before changing folders');
+    run('click', '.consent-dialog button:text-is("Stay offline")');
     run('wait', '--fn', `window.__auditDesktopCommands.some(command=>command[0]==='changeFolder' && command[1]==='add')`);
+    assert(`!document.querySelector('.consent-dialog')?.open`, 'The consent step must close after an answer');
+    run('click', '.profile-settings button:text-is("Add music folder")');
+    run('wait', '--fn', `window.__auditDesktopCommands.filter(command=>command[0]==='changeFolder' && command[1]==='add').length===2`);
+    assert(`!document.querySelector('.consent-dialog')?.open`, 'The lookup question must be asked once');
     assert(`document.querySelector('#settings-tab-advanced').getAttribute('aria-selected')==='true' && document.querySelector('.settings-dialog .advanced')`, 'Advanced settings must be reachable');
     assert(`document.documentElement.scrollWidth<=innerWidth`, 'Settings must fit the window');
     capture(size, 'settings-advanced');

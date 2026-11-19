@@ -2,11 +2,13 @@
   import { onMount } from 'svelte';
   import Button from './ui/button.svelte';
   import LibrarySelect from './ui/library-select.svelte';
+  import ConsentDialog from './consent-dialog.svelte';
   import { desktop } from './desktop.svelte';
   import { session } from './api.svelte';
   import { library, requestScan } from './library.svelte';
   let { portalTarget }: { portalTarget?: Element } = $props();
   let profiles = $state<ProfileEntry[]>([]), name = $state(''), busy = $state(''), error = $state('');
+  let consentStep = $state<ReturnType<typeof ConsentDialog>>(null!);
   const status = $derived(desktop.status);
   onMount(() => {
     window.desktop?.profiles().then(items => { profiles = items.filter(profile => profile.name !== status?.profile.name); name = profiles[0]?.name || ''; }).catch(failure => { error = failure.message; });
@@ -22,6 +24,8 @@
     catch (failure) { error = (failure as Error).message; }
     finally { busy = ''; }
   }
+  // adding a library is where Kept asks, once, whether it may look album details up online
+  function addFolder(from: HTMLElement) { if (!consentStep.ask(from)) void folder('add'); }
   // the library owns the scan request and its polling; the buttons stay in place and keep focus while they wait
   const scanBlocked = $derived(!session.api || library.scan.pending || library.scan.scanning);
   // what the scan is doing, or why it could not start or be checked, on a line that is always there so the sections below never move
@@ -40,7 +44,7 @@
       <div><dt>Data folder</dt><dd>{status.profile.directory}</dd></div>
     </dl>
     <div class="actions">
-      <Button variant="outline" disabled={!!busy} onclick={() => folder('add')}>Add music folder</Button>
+      <Button variant="outline" disabled={!!busy} onclick={(event: MouseEvent) => addFolder(event.currentTarget as HTMLElement)}>Add music folder</Button>
       <Button variant="ghost" disabled={!!busy} onclick={() => folder('replace')}>Replace music folders</Button>
       <Button variant="ghost" onclick={async () => { const problem = await window.desktop!.showData(); if (problem) error = problem; }}>Show data folder</Button>
     </div>
@@ -73,6 +77,7 @@
       {#if busy && busy !== 'copy' && busy !== 'folder'}<p role="status">Opening profile…</p>{/if}
     </details>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    <ConsentDialog bind:this={consentStep} onanswered={() => folder('add')} />
   </section>
 {/if}
 

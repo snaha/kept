@@ -2,9 +2,10 @@ import type { ScanStatus } from 'subsonic-api';
 import { ok, session } from './api.svelte';
 import { appendToSession, enqueue, play, player, beginCollectionOperation, queueSession, type Grid } from './player.svelte';
 import { type Collection, type Track } from './music';
-import { album, playlist, localTrack, localCatalog } from './local-catalog';
+import { localCatalog } from './local-catalog';
 export { album, playlist, localTrack } from './local-catalog';
 import { browseCollections } from './browse-source';
+import { albumPages, artistAlbumsOf, catalogSource, chooseCatalog, setCatalogSelection, trackPagesOf } from './catalog-source.svelte';
 
 export type Tile = Collection;
 export const MODES = ['albums', 'playlists'] as const;
@@ -18,13 +19,17 @@ class LibraryState {
   source = $state<'all' | 'local'>('all');
   scan = $state({ scanning: false, count: 0, checked: false, error: '', pending: false, startError: '' });
   details = $state.raw<Tile | undefined>(undefined)
-
+  // Alias ID -> the ID of the tile that answers to it (see Collection.aliases).
+  aliases = $state.raw<ReadonlyMap<string, string>>(new Map())
 }
 export const library = new LibraryState();
 let localTiles: Tile[] = [], req = 0, pickRequest = 0, listing = true;
+/** The tile a collection ID names here: itself, or the catalog album the music server knows by that ID. */
+export const tileIdOf = (id: string | undefined) => (id === undefined ? undefined : library.aliases.get(id) ?? id);
 
 function publish(preserve: boolean) {
   const next = localTiles;
+  library.aliases = new Map(next.flatMap(tile => (tile.aliases ?? []).map(alias => [alias, tile.id] as const)));
   if (preserve) {
     const map = new Map(next.map((t) => [t.id, t]));
     const old = new Set(library.tiles.map((t) => t.id));
@@ -34,7 +39,7 @@ function publish(preserve: boolean) {
 
 async function allAlbums(type: 'alphabeticalByArtist' | 'newest', mine: number, refresh: boolean) {
   const api = session.api!, out: Tile[] = [];
-  for await (const page of localCatalog.albums(api, type)) {
+  for await (const page of albumPages(api, type)) {
     if (mine !== req || api !== session.api) return;
     out.push(...page);
     if (!refresh) { localTiles = out.slice(); publish(true); }
@@ -47,7 +52,21 @@ export async function setMode(mode: Mode, refresh = false) {
   if (!refresh) { localTiles = []; publish(false); }
   try {
     if (!api) return;
-    if (mode === 'albums') await allAlbums('alphabeticalByArtist', mine, refresh);
+    // Only a fresh load picks the catalog. A refresh keeps the one on screen, so it replaces albums in place.
+    if (!refresh) {
+      const selection = await chooseCatalog();
+      if (mine !== req || api !== session.api) return;
+      setCatalogSelection(selection);
+    }
+    if (mode === 'albums') {
+      try { await allAlbums('alphabeticalByArtist', mine, refresh); }
+      catch (error) {
+        // The library's own catalog failed on a fresh load: the music server serves it. A failed refresh keeps what is shown.
+        if (refresh || catalogSource.active !== 'virtual' || mine !== req || api !== session.api) throw error;
+        setCatalogSelection({ active: 'navidrome', fallback: 'failed' }); localTiles = []; publish(false);
+        await allAlbums('alphabeticalByArtist', mine, refresh);
+      }
+    }
     else {
       const result = await localCatalog.playlists(api);
       if (mine === req && api === session.api) { localTiles = result; publish(refresh); }
@@ -110,6 +129,23 @@ export function watchScan() {
   return () => { stopped = true; clearInterval(timer); };
 }
 
+// The library's own catalog says when it changed: a scan was read in, a repair was applied, a change was undone.
+// The albums on screen are then read again and replaced in place. Changes that arrive together are one refresh.
+const CATALOG_REFRESH_DELAY = 300, CATALOG_REFRESH_RETRY = 1000;
+export function watchCatalog() {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const refresh = () => {
+    timer = undefined;
+    if (catalogSource.active !== 'virtual' || !session.api) return;
+    // A load in flight owns the list: come back when it is done rather than supersede it.
+    if (library.loading) { timer = setTimeout(refresh, CATALOG_REFRESH_RETRY); return; }
+    // An artist's albums picked from search are not a listing: only the open album and the search follow the change.
+    if (listing) void setMode(library.mode, true); else library.revision++;
+  };
+  const unwatch = window.musicCatalog?.onChange(() => { if (timer === undefined) timer = setTimeout(refresh, CATALOG_REFRESH_DELAY); });
+  return () => { unwatch?.(); clearTimeout(timer); };
+}
+
 const rnd = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 export async function songsOf(t: Tile): Promise<Track[]> {
   const tracks: Track[] = [];
@@ -120,7 +156,7 @@ export async function* trackPages(t: Tile): AsyncGenerator<Track[]> {
   if (t.indexing) throw new Error('This album is still being indexed. Its included tracks will appear shortly.');
   if (!t.available) throw new Error('This collection has no playable tracks. Check your music folders in Settings.');
   const api = session.api; if (!api) throw new Error('Your library is not connected.');
-  yield* localCatalog.tracks(api, t);
+  yield* trackPagesOf(api, t);
 }
 export async function pick(t: Tile) {
   const mine = ++pickRequest; player.loadingCollectionId = t.id; player.error = '';
@@ -131,19 +167,20 @@ export async function pick(t: Tile) {
       let version: number | undefined;
       for await (const tracks of trackPages(t)) {
         if (mine !== pickRequest || api !== session.api) return;
-        if (!tracks.length) continue;
+        const included = tracks.filter(track => track.available).map(track => ({ ...track, playbackOrigin: t }));
+        if (!included.length) continue;
         if (version === undefined) {
           if (selection !== player.requestRevision) return;
-          version = play(tracks.map(track => ({ ...track, playbackOrigin: t })), 0, operation.id);
+          version = play(included, 0, operation.id);
           if (version < 0) return;
         }
-        else if (!appendToSession(tracks.map(track => ({ ...track, playbackOrigin: t })), version)) return;
+        else if (!appendToSession(included, version)) return;
       }
       if (version === undefined) throw new Error('This collection contains no music tracks.');
       return;
     }
     if (!api) throw new Error('Your library is not connected.');
-    const albums = await localCatalog.artistAlbums(api, t.rawId);
+    const albums = await artistAlbumsOf(api, t);
     if (mine !== pickRequest || selection !== player.requestRevision || api !== session.api) return;
     req++; listing = false; library.mode = 'albums'; library.tiles = albums;
   } catch (error) { if (mine === pickRequest && api === session.api) operation.fail(error); }
@@ -177,14 +214,14 @@ export function grid(): Grid {
   tiles.forEach((t, i) => (cum[i + 1] = cum[i] + Math.max(1, t.count)));
   return {
     count: cum[tiles.length], key: tiles.map((t) => t.id).join(),
-    find: (albumId) => { const i = tiles.findIndex((t) => t.kind === 'album' && t.id === albumId); return i < 0 ? -1 : cum[i]; },
+    find: (albumId) => { const id = tileIdOf(albumId), i = tiles.findIndex((t) => t.kind === 'album' && t.id === id); return i < 0 ? -1 : cum[i]; },
     async song(n) {
       let lo = 0, hi = tiles.length - 1;
       while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m + 1] <= n) lo = m + 1; else hi = m; }
       const t = tiles[lo], songs = t && (await songsOf(t));
       if (!songs?.length) return;
-      const track = t.kind === 'artist' ? rnd(songs) : songs[n - cum[lo]] ?? rnd(songs);
-      return { ...track, playbackOrigin: t };
+      const track = t.kind === 'artist' ? rnd(songs.filter(song => song.available)) : songs[n - cum[lo]];
+      return track?.available ? { ...track, playbackOrigin: t } : undefined;
     },
   };
 }
