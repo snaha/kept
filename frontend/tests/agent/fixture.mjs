@@ -65,6 +65,8 @@ export const catalogStandIn = () => {
   const w = window;
   if (!new URLSearchParams(location.search).has('catalog')) return;
   const FIELDS = ['title', 'artist', 'year', 'genre'];
+  const params = new URLSearchParams(location.search), estimates = params.get('estimates') === 'on', similar = params.get('similar');
+  const ENERGY_STEP = 37, PERCENT = 100;
   const state = { version: 1, overrides: {}, locks: {}, history: [], route: { id: 'route-1', at: 1700000000000, album: 'album-2', undone: false } };
   let albumsPromise;
   const load = () => albumsPromise ??= fetch('/rest/getAlbumList2.view?size=500').then(r => r.json()).then(j => j['subsonic-response'].albumList2.album.map((a, i) => ({
@@ -76,8 +78,18 @@ export const catalogStandIn = () => {
   const tracksOf = album => [1, 2].map(n => ({ id: `occ-${album.id}-${n}`, albumId: album.id, assetId: `asset-${album.id}-${n}`, position: n, track: n, duration: 180, availability: 'available', title: `Catalog song ${album.id.replace(/^album:album-/, '')} take ${n}`, artist: album.artist, links: [{ sourceId: 'navidrome', externalId: `song-${album.id.replace(/^album:album-/, '')}-${n}` }] }));
   const words = q => q.toLowerCase().split(/\s+/).filter(Boolean);
   w.musicCatalog = {
-    albums: async () => ({ albums: {} }), setTrait: async () => ({ applied: true }), setFavorite: async () => ({ applied: true }), migrate: async () => ({ migrated: [], pending: [] }),
+    // ?estimates=on gives every album an anchor and an estimated energy, the way the analysed library does.
+    albums: async () => ({ albums: estimates ? Object.fromEntries((await load()).map(a => [a.links[0].externalId, { albumId: a.id, favorite: false, availability: 'available', traits: {} }])) : {} }), setTrait: async () => ({ applied: true }), setFavorite: async () => ({ applied: true }), migrate: async () => ({ migrated: [], pending: [] }),
     consent: async () => ({}), setConsent: async () => ({}), tool: async () => ({}), onChange: () => () => {},
+    estimatedTraits: async () => ({ albums: estimates ? Object.fromEntries((await load()).map((a, i) => [a.id, { energy: { value: (i * ENERGY_STEP) % PERCENT } }])) : {} }),
+    // ?similar=sound answers with the next albums as sound neighbours, ?similar=listening with an album that is not analysed yet.
+    similarAlbums: async ({ albumId }) => {
+      if (similar === 'listening') return { analysed: false, albumIds: [] };
+      const all = sorted((await load()).map(shape), 'artist');
+      const at = all.findIndex(a => a.id === albumId);
+      const SIMILAR_ALBUM_LIMIT = 5;
+      return { analysed: true, albumIds: all.slice(at + 1, at + 1 + SIMILAR_ALBUM_LIMIT).map(a => a.id) };
+    },
     catalogAlbums: async ({ offset = 0, limit = 100, sort = 'artist', artist } = {}) => { const all = sorted((await load()).map(shape).filter(a => artist === undefined || a.artist === artist), sort); return { albums: all.slice(offset, offset + limit), total: all.length, version: state.version }; },
     catalogAlbum: async ({ albumId }) => { const album = (await load()).map(shape).find(a => a.id === albumId); return { album: album && { ...album, tracks: tracksOf(album) }, version: state.version }; },
     catalogSearch: async request => {

@@ -9,3 +9,6 @@ native/build/
 build-info.json
 builder-config.json
 .portable-build/
+.ffmpeg-build/
+models/
+.models-build/

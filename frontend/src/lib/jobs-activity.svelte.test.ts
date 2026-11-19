@@ -47,6 +47,6 @@ describe('job progress text', () => {
     expect(jobsSummary(undefined)).toBeUndefined()
     expect(jobsSummary({ mode: 'idle', classes: { hash: { queued: 3, running: 2, done: 5, failed: 0 } } })).toBe('reading files 5 / 10')
     expect(jobsSummary({ mode: 'idle', classes: { reconstruct: { queued: 1, running: 1, done: 2, failed: 0 } } })).toBe('repairing albums 2 / 4')
-    expect(jobsSummary({ mode: 'playing', classes: { hash: { queued: 0, running: 0, done: 10, failed: 0 }, analyse: { queued: 1, running: 0, done: 0, failed: 1 } } })).toBe('analyse 1 / 2')
+    expect(jobsSummary({ mode: 'playing', classes: { hash: { queued: 0, running: 0, done: 10, failed: 0 }, analyse: { queued: 1, running: 0, done: 0, failed: 1 } } })).toBe('listening 1 / 2')
   })
 })

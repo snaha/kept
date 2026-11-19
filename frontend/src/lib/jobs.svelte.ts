@@ -1,8 +1,8 @@
-/** How far the desktop's background work has got: `hash` reads every file once to give it a lasting identity. */
+/** How far the desktop's background work has got: `hash` reads every file once to give it a lasting identity, `analyse` works out how each track sounds. */
 export type JobClassProgress = { queued: number; running: number; done: number; failed: number }
 export type JobsStatus = { mode: 'idle' | 'playing' | 'hold'; classes: Record<string, JobClassProgress> }
 
-const LABELS: Record<string, string> = { hash: 'reading files', reconstruct: 'repairing albums' }
+const LABELS: Record<string, string> = { hash: 'reading files', reconstruct: 'repairing albums', analyse: 'listening' }
 export const jobs = $state<{ status: JobsStatus | undefined }>({ status: undefined })
 
 /** Short text for what is being worked on, or undefined when nothing is. */
