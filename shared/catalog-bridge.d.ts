@@ -1,3 +1,5 @@
+import type { ToolRun, ToolRunRequest } from './tools'
+import type { ToolRunner } from './tool-runner'
 import type {
   AlbumView, CatalogAlbum, CatalogAlbumDetail, CatalogArtist, CatalogLink, CatalogService, CatalogTrack, CommitRejection, ConsentKey, ConsentRecord, TraitName,
   TraitValues, UndoResult,
@@ -36,6 +38,8 @@ export type CatalogBridge = {
   migrate(request: { decidedAt: number; albums: MigrationAlbum[] }): Promise<{ migrated: string[]; pending: string[] }>
   activity(request?: { offset?: number, limit?: number }): Promise<{ entries: ActivityReceipt[], total: number }>
   undo(request: { id: string; operations?: number[] }): Promise<UndoReceipt>
+  // The deterministic tools of the catalog, called directly with no LLM configured.
+  tool(request: ToolRunRequest): Promise<ToolRun>
   catalogAlbums(request?: Parameters<CatalogService['listCatalogAlbums']>[0]): Promise<{ albums: CatalogAlbum[]; total: number; version: number }>
   catalogAlbum(request: { albumId: string }): Promise<{ album?: CatalogAlbumDetail; version: number }>
   catalogSearch(request: CatalogSearchQuery): Promise<CatalogSearchResult>
@@ -47,7 +51,7 @@ export type CatalogBridge = {
   consent(): Promise<ConsentRecord>
   setConsent(request: { consent: ConsentKey; value: 'granted' | 'denied' }): Promise<ConsentRecord>
 }
-export type CatalogBridgeOperation = 'albums' | 'set-trait' | 'set-favorite' | 'migrate' | 'consent' | 'set-consent' | 'activity' | 'undo'
+export type CatalogBridgeOperation = 'albums' | 'set-trait' | 'set-favorite' | 'migrate' | 'consent' | 'set-consent' | 'activity' | 'undo' | 'tool'
   | 'catalog-albums' | 'catalog-album' | 'catalog-search' | 'playback-links' | 'album-review' | 'set-field' | 'lock-field' | 'undo-field'
 
 export const NAVIDROME_SOURCE_ID: string
@@ -62,4 +66,4 @@ export const MAX_ALBUM_PAGE: number
 export const MAX_PLAYBACK_LINKS: number
 export const MAX_YEAR: number
 export function validateCatalogBridgeRequest(method: string, args: unknown[]): unknown
-export function createCatalogBridge(service: CatalogService, options?: { now?: () => number; providerSourceId?: string; newId?: () => string }): CatalogBridge
+export function createCatalogBridge(service: CatalogService, options?: { now?: () => number; providerSourceId?: string; newId?: () => string; tools?: ToolRunner }): CatalogBridge

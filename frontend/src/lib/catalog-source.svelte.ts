@@ -6,7 +6,7 @@ import { localCatalog } from './local-catalog'
 import type { CatalogRef, Collection, Track } from './music'
 import { playbackResolver, trackCatalogRef, type PlaybackRef } from './playback-ref'
 import { readPreference, writePreference } from './preferences'
-import { createVirtualCatalog, isVirtualCollection } from './virtual-catalog'
+import { createVirtualCatalog, isVirtualCollection, virtualTrackId } from './virtual-catalog'
 
 /**
  * Which catalog the window browses. The desktop library's own catalog (albums as Kept
@@ -92,4 +92,14 @@ export async function primePlayback(tracks: Track[], isCurrent = () => true): Pr
   } catch { return false }
   for (const { ref, playback, version } of updates) playbackResolver.update(ref, playback, version)
   return true
+}
+
+/**
+ * The playable tracks for occurrence IDs the tools returned, in the order given. Each album is read once;
+ * an occurrence that is no longer in its album is left out.
+ */
+export async function tracksByOccurrence(entries: { occurrenceId: string; albumId: string }[]): Promise<Track[]> {
+  const albums = await Promise.all([...new Set(entries.map(entry => entry.albumId))].map(albumId => virtual.tracksOf(client(), albumId)))
+  const byId = new Map(albums.flat().map(track => [track.id, track]))
+  return entries.flatMap(entry => { const track = byId.get(virtualTrackId(entry.occurrenceId)); return track ? [track] : [] })
 }

@@ -15,6 +15,8 @@ const ARTIST_ID_PREFIX = 'artist:'
 const ORDERS: Record<'alphabeticalByArtist' | 'newest', CatalogSort> = { alphabeticalByArtist: 'artist', newest: 'added' }
 // Same shape as localId in music.ts, which node-run tests cannot import without a .ts extension the app build rejects.
 const localId = (kind: string, id: string) => `local:${kind}:${id}`
+// The id a track of this catalog has in the window, given the occurrence ID the tools return.
+export const virtualTrackId = (occurrenceId: string) => localId('track', occurrenceId)
 const isPlayable = (availability: string) => availability === 'available' || availability === 'partial'
 
 // An anchor ID always has a colon and a music server ID never does, so a collection tells

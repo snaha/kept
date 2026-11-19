@@ -27,6 +27,7 @@
   import { albumPlays, catalog, dig, digActive, digScore, resetDig, metadata, hasTraitReadings, traitReadings, warmColors, coverRevision } from './discovery.svelte';
   import CollectionDetails from './CollectionDetails.svelte';
   import Settings from './Settings.svelte';
+  import { assistantAvailable, openAssistant } from './assistant.svelte';
   import { desktop } from './desktop.svelte';
   import { bg, importBackground, MATERIALS, randomBackground } from './background.svelte';
 
@@ -367,6 +368,7 @@
         {/each}
       </div>
     </div>
+    {#if assistantAvailable()}<button class="icon-button assistant-trigger" aria-label="Ask for music" title="Ask for music (⌘ or Ctrl J)" aria-keyshortcuts="Control+j Meta+j" onclick={event => openAssistant(event.currentTarget)}><Icon name="assistant" /></button>{/if}
     <button class="icon-button settings-trigger" aria-label="Settings" aria-pressed={player.view === 'settings'} title="Settings" onclick={() => open('settings')}><Icon name="settings" /></button>
   </div>
   {#if dig.open && !searching}<DigPanel matches={shown.length} total={sourceTiles.length} {tagged} {estimated} onrandom={discover} />{/if}
@@ -567,9 +569,9 @@
   .library-status, .scan { position: fixed; left: 16px; bottom: 90px; max-width: min(650px, calc(100vw - 32px)); padding: 8px 12px; box-sizing: border-box; color: var(--ui-text); background: var(--ui-surface); z-index: 3; font: 12px/1.5 var(--ui-font); }
   @media (max-width: 1100px) { .inline-size { flex-basis: 100px; } .compact-bar { gap: 5px; padding-inline: 10px; } .compact-bar :global(.library-select-field) { width: 120px; min-width: 100px; } .collection-filter :global(.library-select-field) { width: 95px; min-width: 85px; } }
   @media (max-width: 700px) {
-    .compact-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; padding: 8px 10px; }
+    .compact-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto auto; gap: 6px; padding: 8px 10px; }
     .browse-search { grid-column: 1; grid-row: 1; } .dig-trigger { grid-column: 2; grid-row: 1; min-height: 44px; }
-    .bar-modes { grid-column: 3; grid-row: 1; } .settings-trigger { grid-column: 4; grid-row: 1; }
+    .assistant-trigger { grid-column: 3; grid-row: 1; } .bar-modes { grid-column: 4; grid-row: 1; } .settings-trigger { grid-column: 5; grid-row: 1; }
     .library-controls { grid-column: 1 / -1; grid-row: 2; display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--ui-border) transparent; padding: 2px 0 5px; }
     .collection-filter { flex: 0 0 100px; } .show-filter, .sort-filter { flex: 0 0 128px; } .sort-direction { flex: 0 0 44px; } .inline-size { display: none; }
     .compact-bar :global(.library-select-field) { width: 100%; min-width: 0; box-sizing: border-box; } .compact-bar :global(.library-select-field input) { height: 40px; }

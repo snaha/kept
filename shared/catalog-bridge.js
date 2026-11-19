@@ -1,6 +1,7 @@
 // What the frontend may ask of the identity spine. Decisions are keyed by the provider's album
 // ID or by the anchor, the read model and the review by the anchor. Works over any
 // CatalogService. Types: catalog-bridge.d.ts.
+import { validateToolInput } from './tool-contracts.js'
 import { CONSENT_KEYS, FAVORITE_FIELD, TRAIT_NAMES, USER_SOURCE_ID, isCatalogId, isTraitValue, traitField, traitOfField } from './catalog-rules.js'
 import { MAX_SEARCH_LIMIT, MAX_TAG_LENGTH } from './catalog-projection.js'
 
@@ -8,7 +9,7 @@ export const NAVIDROME_SOURCE_ID = 'navidrome'
 // IPC operation name -> bridge method.
 export const CATALOG_BRIDGE_METHODS = Object.freeze({
   albums: 'albums', 'set-trait': 'setTrait', 'set-favorite': 'setFavorite', migrate: 'migrate', consent: 'consent', 'set-consent': 'setConsent',
-  activity: 'activity', undo: 'undo',
+  activity: 'activity', undo: 'undo', tool: 'tool',
   'catalog-albums': 'catalogAlbums', 'catalog-album': 'catalogAlbum', 'catalog-search': 'catalogSearch', 'playback-links': 'playbackLinks',
   'album-review': 'albumReview', 'set-field': 'setField', 'lock-field': 'lockField', 'undo-field': 'undoField',
 })
@@ -71,6 +72,8 @@ export function validateCatalogBridgeRequest(method, args) {
   if (method === 'activity' && !((request.offset === undefined || isCount(request.offset))
     && (request.limit === undefined || isLimit(request.limit, MAX_ACTIVITY_PAGE)))) fail()
   if (method === 'undo' && !isCatalogId(request.id)) fail()
+  // The tool contracts name the first violation, which the caller can act on.
+  if (method === 'tool') { if (Object.keys(request).some(key => key !== 'name' && key !== 'input')) fail(); validateToolInput(request.name, request.input) }
   if (method === 'set-trait' && !(isAlbumTarget(request) && TRAIT_NAMES.includes(request.trait) && (request.value === undefined || isTraitValue(request.value)) && isChangeId(request.changeId))) fail()
   if (method === 'set-favorite' && !(isAlbumTarget(request) && typeof request.value === 'boolean' && isChangeId(request.changeId))) fail()
   if (method === 'set-consent' && !(CONSENT_KEYS.includes(request.consent) && CONSENT_VALUES.includes(request.value))) fail()
@@ -118,7 +121,7 @@ function compareOperation({ operation, before }, nameOf) {
   return { label: 'Music server link', after: nameOf(operation.subject) }
 }
 
-export function createCatalogBridge(service, { now = Date.now, providerSourceId = NAVIDROME_SOURCE_ID, newId = () => `${CHANGE_ID_PREFIX}${globalThis.crypto.randomUUID()}` } = {}) {
+export function createCatalogBridge(service, { now = Date.now, providerSourceId = NAVIDROME_SOURCE_ID, tools, newId = () => `${CHANGE_ID_PREFIX}${globalThis.crypto.randomUUID()}` } = {}) {
   // The anchor of a provider album, once a scan has linked it. Before the first scan the provider is not registered.
   const anchorOf = async providerAlbumId => {
     try { return (await service.resolveProviderId({ sourceId: providerSourceId, kind: 'album', externalId: providerAlbumId })).subject }
@@ -267,6 +270,11 @@ export function createCatalogBridge(service, { now = Date.now, providerSourceId 
     async undo({ id, operations }) {
       const result = await service.undoChangeSet({ id, operations, undoneAt: now() })
       return result.status === 'undone' ? { status: 'undone' } : { status: 'blocked', reason: result.reason, blockedBy: result.blockedBy }
+    },
+    // Runs a deterministic tool with no LLM involved. Only IDs and scores come back.
+    tool: async ({ name, input }) => {
+      if (!tools) throw new Error('Tools are not available')
+      return tools.run(name, input)
     },
     consent: () => service.getConsent(),
     setConsent: ({ consent, value }) => service.setConsent({ consent, value, decidedAt: now() }),
