@@ -15,6 +15,8 @@
   import Visualizer from './lib/Visualizer.svelte';
   import { bg } from './lib/background.svelte';
   import Startup from './lib/Startup.svelte';
+  import AssistantBar from './lib/assistant-bar.svelte';
+  import { assistantAvailable, openAssistant } from './lib/assistant.svelte';
   import { desktop, initDesktop } from './lib/desktop.svelte';
 
   let ready = $state(false), idle = $state(false);
@@ -69,6 +71,13 @@
     if (!e.altKey && !e.repeat && (combo ? key === 't' : key === 'v' && !editing)) { e.preventDefault(); player.visOpen = !player.visOpen; wake(); return; }
     if (player.visOpen) return; // the visualizer owns the keys while open
     if (e.key === 'Tab') { wrapArtworkTab(e); return; }
+    // Ask for music: opened by this shortcut or its button, never by itself.
+    if (combo && !e.altKey && !e.shiftKey && !e.repeat && key === 'j' && assistantAvailable()
+      && (!window.desktop || (ready && desktop.status?.phase === 'ready' && !desktop.status.onboarding))) {
+      e.preventDefault()
+      openAssistant(document.activeElement)
+      return
+    }
     if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); void focusSearch(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'Escape') {
@@ -127,6 +136,7 @@
         <div><dt><kbd>Space</kbd></dt><dd>Play / pause</dd></div>
         <div><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next track</dd></div>
         <div><dt><kbd>/</kbd> <kbd>⌘ / Ctrl K</kbd></dt><dd>Search library</dd></div>
+        {#if assistantAvailable()}<div><dt><kbd>⌘ / Ctrl J</kbd></dt><dd>Ask for music in words</dd></div>{/if}
         <div><dt><kbd>L</kbd></dt><dd>Show playing album in library</dd></div>
         <div><dt><kbd>Q</kbd></dt><dd>Open / close player</dd></div>
         <div><dt><kbd>S</kbd></dt><dd>Settings</dd></div>
@@ -141,6 +151,7 @@
       <p>While typing, keys enter text. Space activates focused buttons.</p>
     </aside>
   {/if}
+  {#if assistantAvailable()}<AssistantBar />{/if}
   <Bar hidden={idle} onshowinlibrary={() => grid?.showPlayingAlbum()} />
   <!-- one visualizer for both places: behind the grid as the background material, and fullscreen. Opening it fullscreen
     carries on from the picture the background shows -->

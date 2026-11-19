@@ -66,6 +66,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
       export const net = { fetch: async () => ({ ok: true }) };
       export const session = { defaultSession: { flushStorageData() {} } };
       export const shell = {};
+      export const safeStorage = { isEncryptionAvailable: () => false };
     `,
     profiles: `${access}
       import { existsSync, readFileSync } from 'node:fs';

@@ -103,3 +103,22 @@ export const catalogStandIn = () => {
     undo: async () => { state.route.undone = true; state.version++; return { status: 'undone' }; },
   };
 };
+
+// The optional assistant, as the desktop preload would give it. ?assistant=on answers with a queue from the
+// catalog stand-in, ?assistant=off is the opt-in state, ?assistant=fail answers with an API error. Combine with ?catalog=bridge.
+export const assistantStandIn = () => {
+  const mode = new URLSearchParams(location.search).get('assistant');
+  if (!mode) return;
+  const status = { enabled: mode !== 'off', provider: 'anthropic', model: 'claude-sonnet-5-5', models: { anthropic: 'claude-sonnet-5-5', local: '' }, baseUrl: 'http://localhost:11434/v1', hasKey: mode !== 'off', canStoreKey: true };
+  const queue = [1, 2, 3].flatMap(a => [1, 2].map(n => ({ occurrenceId: `occ-album:album-${a}-${n}`, albumId: `album:album-${a}`, title: `Catalog song ${n}`, artist: `Artist ${a}`, album: `Album 00${a}` })));
+  window.musicAssistant = {
+    status: async () => ({ ...status }),
+    save: async change => Object.assign(status, { enabled: change.enabled ?? status.enabled, hasKey: change.apiKey ? true : change.clearKey ? false : status.hasKey }),
+    cancel: async () => {},
+    ask: async ({ request }) => {
+      await new Promise(resolve => setTimeout(resolve, 600));
+      if (mode === 'fail') throw new Error('The API key was not accepted. Check it in Settings.');
+      return { message: `Here is a queue for "${request}".`, queue, steps: [{ tool: 'search_catalog', ok: true, detail: '12 results' }, { tool: 'build_queue', ok: true, detail: '6 tracks' }] };
+    },
+  };
+};

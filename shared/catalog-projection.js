@@ -82,7 +82,7 @@ export function compareAlbums(sort) {
 export const compareTracks = (a, b) => compareText(sortKey(a.title), sortKey(b.title)) || compareText(a.id, b.id)
 export const compareArtists = (a, b) => compareText(sortKey(a.name), sortKey(b.name)) || compareText(a.name, b.name)
 
-const MAX_QUERY_LENGTH = 200
+export const MAX_CATALOG_QUERY_LENGTH = 200
 export const MAX_TAG_LENGTH = 1000
 const TAG_TEXTS = ['title', 'artist', 'album', 'albumArtist', 'genre']
 const isObject = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -122,7 +122,7 @@ export function tagObservations(files, albumOf) {
 
 export function normalSearch(request) {
   const { query, kinds = SEARCH_KINDS, limit = DEFAULT_SEARCH_LIMIT, offset = 0 } = isObject(request) ? request : {}
-  const valid = typeof query === 'string' && query.length <= MAX_QUERY_LENGTH && Array.isArray(kinds) && kinds.every(kind => SEARCH_KINDS.includes(kind))
+  const valid = typeof query === 'string' && query.length <= MAX_CATALOG_QUERY_LENGTH && Array.isArray(kinds) && kinds.every(kind => SEARCH_KINDS.includes(kind))
     && Number.isSafeInteger(limit) && limit >= 1 && limit <= MAX_SEARCH_LIMIT && Number.isSafeInteger(offset) && offset >= 0
   if (!valid) throw catalogError('invalid-request', 'search')
   return { terms: searchTerms(query), kinds, limit, offset }

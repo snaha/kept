@@ -3,11 +3,12 @@
 // may return is a catalog ID, so no result can carry a path, audio or lyrics.
 // Types: tools.ts and tool-contracts.d.ts.
 import { ID_PATTERN, MAX_ID_LENGTH, TRAIT_MAX, TRAIT_MIN, TRAIT_NAMES } from './catalog-rules.js'
+import { MAX_CATALOG_QUERY_LENGTH as MAX_QUERY_LENGTH } from './catalog-projection.js'
 
 export const TOOL_NAMES = ['search_catalog', 'find_similar', 'rank_tracks', 'build_queue']
 export const MAX_TOOL_RESULTS = 200
 export const DEFAULT_TOOL_RESULTS = 20
-export const MAX_QUERY_LENGTH = 500
+export { MAX_QUERY_LENGTH }
 export const MAX_RANK_CANDIDATES = 5000
 export const MAX_QUEUE_LENGTH = 500
 export const MAX_QUEUE_SEEDS = 50

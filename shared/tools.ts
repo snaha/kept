@@ -2,7 +2,7 @@
 // calls the tools directly and an optional LLM drives the same ones through the
 // descriptors in tool-contracts.js. A result holds catalog IDs and scores only:
 // never a path, audio, lyrics or any other text.
-import type { TraitName } from './catalog'
+import type { CatalogAlbum, TraitName } from './catalog'
 
 export type ToolName = 'search_catalog' | 'find_similar' | 'rank_tracks' | 'build_queue'
 // An album anchor ID, or the ID of a track occurrence in an album.
@@ -66,3 +66,22 @@ export type ToolSchema =
   | { type: 'array'; description?: string; items: ToolSchema; minItems?: number; maxItems?: number }
   | { type: 'object'; description?: string; properties: Record<string, ToolSchema>; required?: readonly string[]; additionalProperties: false }
 export type ToolContract<Name extends ToolName = ToolName> = { name: Name; description: string; input: ToolSchema; output: ToolSchema }
+
+// C1: what the deterministic tools read besides the catalog. Both are injected, so the
+// tools are tested on fakes and B1's features.sqlite store implements FeatureSource.
+export type FeatureMethod = { id: string; version: string }
+export type FeatureVector = ArrayLike<number>
+// Embeddings of one method and version. Albums are keyed by catalog album ID and tracks by
+// asset ID. An ID with no vector is absent from the map.
+export interface FeatureSource {
+  readonly method: FeatureMethod
+  albumVectors(albumIds: string[]): Promise<Map<string, FeatureVector>>
+  trackVectors(assetIds: string[]): Promise<Map<string, FeatureVector>>
+}
+// Plays per catalog album ID (the provider IDs of the listening history already mapped).
+export type HistoryStats = {
+  albumStats(albums: ReadonlyMap<string, CatalogAlbum>): Promise<Record<string, { plays: number; lastPlayed: number }>>
+}
+// dropped counts IDs that were not in the catalog and so were left out of the output.
+export type ToolRun<Name extends ToolName = ToolName> = { name: Name; output: ToolIo[Name]['output']; dropped: number }
+export type ToolRunRequest = { [Name in ToolName]: { name: Name; input: ToolIo[Name]['input'] } }[ToolName]

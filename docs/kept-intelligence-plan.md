@@ -67,3 +67,4 @@ Each finished phase keeps its notes in its own file. Read only the notes for the
 - [A3 notes](kept/a3.md)
 - [C1 notes](kept/c1.md)
 - [A4 notes](kept/a4.md)
+- [C2 notes](kept/c2.md)

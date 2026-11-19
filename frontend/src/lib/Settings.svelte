@@ -5,6 +5,8 @@
   import Button from './ui/button.svelte';
   import ProfileSettings from './ProfileSettings.svelte';
   import LookupToggle from './lookup-toggle.svelte';
+  import AssistantSettings from './assistant-settings.svelte';
+  import { assistantAvailable } from './assistant.svelte';
   import { consent, setLookupConsent } from './consent.svelte';
   import ActivityPanel from './activity-panel.svelte';
   import { activity, loadActivity, loadOlderActivity, undoActivity } from './activity.svelte'
@@ -187,6 +189,7 @@
           {/if}
           <LookupToggle value={consent.lookup} onchange={setLookupConsent} />
           {#if consent.error}<p class="err" role="alert">{consent.error}</p>{/if}
+          {#if assistantAvailable()}<AssistantSettings />{/if}
           <div class="server">
             <span class="k">Server</span>
             <span class="v">{session.base}</span>

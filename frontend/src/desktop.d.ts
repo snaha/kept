@@ -17,6 +17,13 @@ interface Window {
     status(): Promise<import('./lib/jobs.svelte').JobsStatus>;
     onChange(callback: (status: import('./lib/jobs.svelte').JobsStatus) => void): () => void;
   };
+  // The optional LLM assistant (desktop/preload.js). The key is kept by the main process; the window only learns that one exists.
+  musicAssistant?: {
+    status(): Promise<import('./lib/assistant.svelte').AssistantStatus>;
+    save(change: import('./lib/assistant.svelte').AssistantChange): Promise<import('./lib/assistant.svelte').AssistantStatus>;
+    ask(request: { request: string; id: string }): Promise<import('./lib/assistant.svelte').AssistantReply>;
+    cancel(id?: string): Promise<void>;
+  };
   desktop?: {
     status: () => Promise<DesktopStatus>;
     start: (options?: { source?: 'folder' | 'empty'; musicFolder?: string; musicFolders?: string[] }) => Promise<DesktopStatus>;

@@ -1,5 +1,5 @@
 import { validateDesktopRequest, validateHistoryEnvelope } from '../shared/contracts.js';
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, session as electronSession, shell, utilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session as electronSession, shell, utilityProcess } from 'electron';
 import { MusicDatabase } from './music-database.js';
 import { closeFrontend, isMusicDocument, listenFrontend, stopMusicServer } from './service-lifecycle.js';
 import { spawn } from 'node:child_process';
@@ -16,6 +16,11 @@ import { normalizeMusicFolders, prepareMusicRoot, profileMusicFolders } from './
 import { CATALOG_BRIDGE_METHODS, CATALOG_CHANGING_OPERATIONS, createCatalogBridge, validateCatalogBridgeRequest } from '../shared/catalog-bridge.js'
 import { createLibraryService } from './library-service.js'
 import { ResourcePolicy } from './resource-policy.js'
+import { createToolRunner } from '../shared/tool-runner.js'
+import { createHistoryStats } from './tool-services.js'
+import { createAssistant } from './assistant.js'
+import { createAssistantService } from './assistant-service.js'
+import { createAssistantSettings } from './assistant-settings.js'
 import { CatalogDatabase } from './catalog-database.js'
 import { markUnavailableSources, startCatalogSync } from './catalog-ingest.js'
 import { createTrackPathResolver } from './track-paths.js'
@@ -203,7 +208,14 @@ app.whenReady().then(async () => {
   if (profileMusicFolders(config).some(folder => !existsSync(folder))) { config.setupComplete = false; startupError = 'A music folder is unavailable. Reconnect its drive or remove it before opening your library.'; }
   phase = config.setupComplete ? 'starting' : 'setup';
   catalogDatabase = new CatalogDatabase(path.join(profile.directory, 'library.sqlite'))
-  catalogBridge = createCatalogBridge(catalogDatabase.service)
+  // Tools read the history of the signed-in account; the feature store joins when B1 provides it.
+  const toolRunner = createToolRunner({
+    catalog: catalogDatabase.service,
+    history: createHistoryStats({
+      stats: async () => (musicDatabase && st ? musicDatabase.call('stats', { scope: `desktop:${st.username}` }) : {}),
+    }),
+  })
+  catalogBridge = createCatalogBridge(catalogDatabase.service, { tools: toolRunner })
   // An unplugged drive keeps its albums and tags: they are shown as unavailable, never dropped.
   void markUnavailableSources({ catalog: catalogDatabase.service, folders: profileMusicFolders(config) }).catch(error => console.error('Kept catalog:', error.message))
   for (const [operation, method] of Object.entries(CATALOG_BRIDGE_METHODS)) ipcMain.handle(`catalog:${operation}`, async (event, ...args) => {
@@ -238,6 +250,22 @@ app.whenReady().then(async () => {
   ipcMain.handle('jobs:status', async event => {
     trusted(event)
     try { return { value: await library.status() } } catch (error) { return { error: error.message } }
+  })
+  // The optional assistant: off until the user opts in, called from here with a key that only this process can read.
+  const assistantService = createAssistantService({
+    settings: createAssistantSettings({ directory: profile.directory, safeStorage }),
+    assistant: createAssistant({ runner: toolRunner }),
+    folders: () => profileMusicFolders(config),
+  })
+  const assistantRequests = {
+    status: () => assistantService.status(),
+    save: change => assistantService.save(change),
+    ask: (request, sender) => assistantService.ask(request, sender),
+    cancel: (id, sender) => assistantService.cancel(id, sender),
+  }
+  for (const [name, call] of Object.entries(assistantRequests)) ipcMain.handle(`assistant:${name}`, async (event, request) => {
+    trusted(event)
+    try { return { value: await call(request, event.sender) } } catch (error) { return { error: error.message } }
   })
   for (const method of ['write', 'list', 'clear', 'stats']) ipcMain.handle(`music-history:${method}`, async (event, args) => {
     trusted(event);

@@ -7,6 +7,7 @@ export type SearchRow = { kind: 'album' | 'track'; id: string; albumId: string; 
 export const PROJECTION_FORMAT: number
 export const DEFAULT_SEARCH_LIMIT: number
 export const MAX_SEARCH_LIMIT: number
+export const MAX_CATALOG_QUERY_LENGTH: number
 export const CATALOG_SORTS: readonly CatalogSort[]
 export const SEARCH_KINDS: readonly CatalogSearchKind[]
 export const MAX_REPORTED_DIFFERENCES: number

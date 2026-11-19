@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('musicCatalog', {
   setConsent: request => catalogCall('set-consent', request),
   activity: request => catalogCall('activity', ...(request === undefined ? [] : [request])),
   undo: request => catalogCall('undo', request),
+  tool: request => catalogCall('tool', request),
   catalogAlbums: request => catalogCall('catalog-albums', ...(request === undefined ? [] : [request])),
   catalogAlbum: request => catalogCall('catalog-album', request),
   catalogSearch: request => catalogCall('catalog-search', request),
@@ -70,4 +71,17 @@ contextBridge.exposeInMainWorld('musicJobs', {
     ipcRenderer.on('jobs:changed', listener)
     return () => ipcRenderer.removeListener('jobs:changed', listener)
   },
+})
+
+// The optional assistant. The key is typed once into Settings and kept by the main process: the window can learn that one exists.
+const assistantCall = async (operation, request) => {
+  const reply = await ipcRenderer.invoke(`assistant:${operation}`, request)
+  if (reply.error) throw new Error(reply.error)
+  return reply.value
+}
+contextBridge.exposeInMainWorld('musicAssistant', {
+  status: () => assistantCall('status'),
+  save: change => assistantCall('save', change),
+  ask: request => assistantCall('ask', request),
+  cancel: id => assistantCall('cancel', id),
 })
