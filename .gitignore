@@ -18,3 +18,9 @@ navidrome/data/
 
 # Extracted local preview builds
 .local-builds/
+
+# Real music libraries a local check reads, and what it allows (scripts/check-private-data.mjs)
+.private-music
+.private-music-allow
+**/fixtures/local/
+test_library/

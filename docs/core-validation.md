@@ -63,10 +63,9 @@ of every screenshot against approved references remains pending.
 A new isolated `core-validation` profile used the native macOS folder chooser to
 add the archive alongside the default Music folder. Both roots appeared on the
 startup screen before Open my library. Indexing produced **1,106 songs across
-124 albums**. Search for `hopscotch` returned two songs and two albums spanning
-the two roots. The archive track **KWA - Hopscotch — DJ Jean** streamed and decoded,
-with playback advancing past **12 seconds** and a decoded duration of **181.77
-seconds**, then paused. Adding the other result produced a two-entry queue
+124 albums**. A search for one track title returned two songs and two albums
+spanning the two roots. The archive track streamed and decoded, and playback
+advanced before pausing. Adding the other result produced a two-entry queue
 without resuming playback; Recently played showed the successful play. Dig
 opened with 124 albums and Random pick revealed an album without starting sound.
 
@@ -121,12 +120,12 @@ adapter. See `docs/core-reliability.md` for the integration boundaries.
   `0.5.0-preview.202610041229.829affc`, containing the tested uncommitted fixes.
 
 The final package reopened an isolated profile with both default and Archive
-folders. UI search found tracks from both roots and played **KWA - Hopscotch**,
-advancing to **3.161523 seconds** with a decoded duration of **181.7664 seconds**
-and the listening icon active. Recent history retained an earlier play across
-restart; failed artwork displayed a square placeholder. Pause/resume, keyboard
-seeking and adding a song without resuming playback were also checked in the
-preceding local candidate. No browser JavaScript errors were reported.
+folders. UI search found tracks from both roots. An archive track decoded and
+playback advanced with the listening icon active. Recent history retained an
+earlier play across restart and failed artwork displayed a square placeholder.
+Pause/resume, keyboard seeking and adding a song without resuming playback were
+also checked in the preceding local candidate. No browser JavaScript errors
+were reported.
 
 The native folder chooser automation was blocked in this latest pass; startup
 used the desktop setup API with the same authorized paths. The native chooser

@@ -40,6 +40,27 @@ This project uses **pnpm** (not npm or yarn). Always use `pnpm` commands:
 - Use ESM `import`, not CommonJS `require` — in source, scripts, and ad-hoc
   verification snippets (e.g. `node --input-type=module -e "import { x } from './frontend/src/lib/api.svelte.ts'"`).
 
+## Private music
+
+This repository is public. Nothing from a real music library is committed, the owner's or anyone's.
+
+- **Never commit** audio from a real library or anything that describes one: artist, album, track
+  or file names, folder paths, tag dumps, recorded provider answers about it (MusicBrainz, Last.fm,
+  AcoustID, Cover Art Archive), or features and hashes computed from its audio.
+- **Tests use synthetic data:** tones made with ffmpeg (`-f lavfi -i sine=...`) tagged with invented
+  names, hand-written provider fixtures with fake IDs, or public-domain recordings whose licence and
+  source are noted beside them. Check that an invented name is not a real act.
+- **Real libraries are for local runs only.** Pass them by argument or environment; whatever a run
+  learns about them stays in a git-ignored `fixtures/local/`. Docs describe a real collection by its
+  size only ("a private 958-track collection"), never by path or name.
+- **The guard:** `node scripts/check-private-data.mjs` rejects audio beyond the synthetic fixtures,
+  home and sandbox paths, and local fixtures (CI runs it with `--all`). Enable the hooks once with
+  `git config core.hooksPath .githooks`, and list your library folders in `.private-music`
+  (git-ignored, one per line) so commits and pushes are also checked for their names.
+  Private names are only checked when the guard runs locally with that list or `KEPT_PRIVATE_MUSIC`.
+  Matched names are not printed; `--show-terms` shows them, and a false positive goes in
+  `.private-music-allow`.
+
 ## Product Feel
 
 The app is a video game, not a CRUD interface: performant, reactive, low latency. The user should feel in

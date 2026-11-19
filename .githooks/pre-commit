@@ -1,0 +1,4 @@
+#!/bin/sh
+# Real music libraries stay out of git: see AGENTS.md, Private music.
+[ -f scripts/check-private-data.mjs ] || exit 0
+exec node scripts/check-private-data.mjs --staged
