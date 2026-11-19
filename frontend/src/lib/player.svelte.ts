@@ -153,10 +153,11 @@ export function appendToSession(tracks: Track[], version: number) {
   prepareNext(); return true;
 }
 export const queueSession = () => queueVersion;
-export function enqueue(tracks: Track[]) {
+export function enqueue(tracks: Track[], { revealQueue = true } = {}) {
   if (remote.send) { remote.send({ type: 'command', name: 'queue', tracks }); return queueVersion; }
   if (player.order === 'random') { randomGrid = undefined; cancelRandomLookup(); player.order = 'normal'; }
-  appendToSession(tracks, queueVersion); player.queueOpen = true;
+  appendToSession(tracks, queueVersion);
+  if (revealQueue) player.queueOpen = true;
   return queueVersion;
 }
 function shuffleEntries() {
@@ -204,15 +205,17 @@ export function removeQueue(index: number) {
   prepareNext();
 }
 
+function useRandomScope(grid: Grid) {
+  randomGrid = grid;
+  perm = shuffle(grid.count); cursor = -1;
+}
 export function setOrder(order: Order, source: () => Grid) {
   if (remote.send) return remote.send({ type: 'command', name: 'order', order, collections: order === 'random' ? source().collections ?? [] : [] })
   if (order === player.order) return;
   freshHistoryContext();
   player.order = order; cancelRandomLookup();
   if (order === 'random') {
-    randomGrid = source(); // freeze the source selection for this listening session
-    perm = shuffle(randomGrid.count); cursor = -1;
-    freshHistoryContext();
+    useRandomScope(source()); // freeze the source selection for this listening session
     const current = player.song;
     player.queue = current ? [current] : []; player.index = current ? 0 : -1;
     if (!current) void nextRandom();
@@ -233,29 +236,50 @@ async function nextRandom() {
   } catch (error) { if (mine === randomDraw) fail(error); }
   finally { if (mine === randomDraw) player.randomRequesting = false; }
 }
-export function jumpRandom(source: () => Grid) {
+export function jumpRandom(source: () => Grid, { replaceScope = false } = {}) {
   if (remote.send) return remote.send({ type: 'command', name: 'random', collections: source().collections ?? [] })
   const hadSong = !!player.song;
   if (player.order !== 'random') { setOrder('random', source); if (hadSong) void nextRandom(); }
-  else void nextRandom();
+  else {
+    if (replaceScope) {
+      cancelRandomLookup();
+      freshHistoryContext();
+      useRandomScope(source());
+      if (player.index < player.queue.length - 1) player.queue = player.queue.slice(0, player.index + 1);
+    }
+    void nextRandom();
+  }
 }
 export function replayHistory(entry: HistoryEntry) {
-  if (remote.send) return remote.send({ type: 'command', name: 'tracks', tracks: entry.context.queue.map(historyTrack), index: entry.index })
-  const context = entry.context;
+  const { context, index } = entry;
+  const tracks = context.queue.map(historyTrack);
+  const { order, permutation } = context;
+  if (remote.send) {
+    const sequence = order === 'shuffle' ? historyShuffle(permutation, tracks.length, index) : []
+    return remote.send({ type: 'command', name: 'history', tracks, index, order, permutation: sequence })
+  }
   logPlayback('history-selected', { entryId: entry.id, contextId: context.id, index: entry.index });
-  const queue = context.queue.map(historyTrack);
-  if (blocked(queue[entry.index])) return;
+  if (replayQueue(tracks, index, order, permutation)) player.queueTab = 'queue';
+}
+export function isQueuePermutation(value: unknown, length: number): value is number[] {
+  return Array.isArray(value) && value.length === length && new Set(value).size === length
+    && value.every(index => Number.isInteger(index) && index >= 0 && index < length);
+}
+function historyShuffle(permutation: number[], length: number, index: number) {
+  return isQueuePermutation(permutation, length) ? permutation : [...shuffle(length, index)]
+}
+export function replayQueue(queue: Track[], index: number, order: Order, permutation: number[]) {
+  if (blocked(queue[index])) return false;
   // Start the chosen occurrence, then restore the exact shuffle permutation.
   const previousOrder = player.order;
   player.order = 'normal';
-  if (play(queue, entry.index) < 0) { player.order = previousOrder; return; }
-  player.order = context.order === 'random' ? 'normal' : context.order;
+  if (play(queue, index) < 0) { player.order = previousOrder; return false; }
+  player.order = order === 'random' ? 'normal' : order;
   if (player.order === 'shuffle') {
-    const valid = context.permutation.length === queue.length && new Set(context.permutation).size === queue.length && context.permutation.every(i => Number.isInteger(i) && i >= 0 && i < queue.length);
-    perm = valid ? Uint32Array.from(context.permutation) : shuffle(queue.length, entry.index);
-    cursor = [...perm].indexOf(entry.index);
+    perm = Uint32Array.from(historyShuffle(permutation, queue.length, index))
+    cursor = perm.indexOf(index);
   }
-  player.queueTab = 'queue';
+  return true;
 }
 export function jump(index: number) {
   if (remote.send) return remote.send({ type: 'command', name: 'jump', entryId: player.queue[index]?.queueEntryId ?? '' })

@@ -70,9 +70,17 @@ for (const migrationError of [undefined, new Error('fixture import unavailable')
 test('main retry after a server exit closes the prior HTTP server and database before reusing saved ports', async () => {
   const { state, dispose } = await mainHarness();
   try {
+    const data = path.join(state.profile.directory, 'navidrome')
+    const oldCredentials = { username: 'admin', password: 'fixture-admin', sharePassword: 'fixture-library' }
+    await mkdir(data, { recursive: true })
+    await writeFile(path.join(data, 'credentials.json'), JSON.stringify(oldCredentials))
     state.finishMigration();
     const { value: initial } = await state.invoke('start', { source: 'empty' });
     assert.equal(initial.phase, 'ready');
+    assert.equal(initial.share.password, oldCredentials.sharePassword)
+    assert.ok(initial.share.controlSecret)
+    assert.notEqual(initial.share.controlSecret, oldCredentials.sharePassword)
+    assert.notEqual(initial.share.controlSecret, oldCredentials.password)
     assert.equal((await fetch(`http://127.0.0.1:${initial.share.webPort}`)).status, 200);
     const child = state.children[0];
     child.exitCode = 1;
@@ -82,6 +90,7 @@ test('main retry after a server exit closes the prior HTTP server and database b
     assert.equal(retry.phase, 'ready');
     assert.equal(retry.share.webPort, initial.share.webPort, 'old frontend server must not force a new share port');
     assert.equal(retry.share.port, initial.share.port);
+    assert.equal(retry.share.controlSecret, initial.share.controlSecret)
     assert.equal(state.databases[0].closed, true);
     assert.equal(state.databases[1].closed, undefined);
     const history = state.handlers.get('music-history:list');

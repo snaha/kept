@@ -4,10 +4,7 @@ import { currentPageUrl, serverUrl } from './connection-security'
 import { randomId } from './random-id'
 
 const USER = 'share'
-// What the phone does with the library: control the player on this computer, or play on the phone itself.
-// The link carries it as `m`; the Share drawer shows one code per mode.
 export type ShareMode = 'control' | 'library'
-export const withMode = (link: string, mode: ShareMode) => `${link}&m=${mode}`
 const HTTP_NO_CONTENT = 204
 type ShareUser = Record<string, unknown> & { id: string; userName: string; isAdmin: boolean }
 let operation = 0
@@ -23,7 +20,7 @@ function shareUser(value: unknown): ShareUser {
 
 // Browser credentials belong to a normalized server (including its base path)
 // and the account managing that server. Desktop credentials stay profile-local.
-export async function shareLink(signal?: AbortSignal) {
+export async function shareLinks(signal?: AbortSignal) {
   const current = ++operation
   const api = session.api
   const username = session.username
@@ -94,5 +91,7 @@ export async function shareLink(signal?: AbortSignal) {
   }
 
   assertCurrent()
-  return `${frontend}#u=${USER}&p=${encodeURIComponent(password)}&s=${encodeURIComponent(server)}`
+  const library = `${frontend}#u=${USER}&p=${encodeURIComponent(password)}&s=${encodeURIComponent(server)}`
+  const control = d?.controlSecret ? `${library}&m=control&c=${encodeURIComponent(d.controlSecret)}` : undefined
+  return { library, control }
 }

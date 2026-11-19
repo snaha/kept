@@ -5,7 +5,10 @@ import Share from './Share.svelte';
 
 vi.mock('./sharing.svelte', async (original) => ({
   ...(await original<typeof import('./sharing.svelte')>()),
-  shareLink: vi.fn(async () => 'http://10.0.0.2:4000/#u=share&p=secret&s=http%3A%2F%2F10.0.0.2%3A4533'),
+  shareLinks: vi.fn(async () => {
+    const library = 'http://10.0.0.2:4000/#u=share&p=secret&s=http%3A%2F%2F10.0.0.2%3A4533'
+    return { library, control: window.desktop ? `${library}&m=control&c=fixture-control` : undefined }
+  }),
 }));
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });

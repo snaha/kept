@@ -1,5 +1,6 @@
 <script lang="ts">
   import { control, setShareMode } from './control-client.svelte';
+  import { session } from './api.svelte';
   import type { ShareMode } from './sharing.svelte';
 
   // a phone that opened a share link chooses what it does with the library: Control plays on the computer that shared
@@ -8,7 +9,7 @@
   const status = $derived(control.mode !== 'control' ? '' : !control.connected ? 'connecting…' : control.host ? '' : 'Computer disconnected');
 </script>
 
-{#if control.mode}
+{#if session.controlSecret}
   <div class="control-switch" role="radiogroup" aria-label="Where music plays">
     {#each OPTIONS as option (option.mode)}
       <button role="radio" aria-checked={control.mode === option.mode} class:on={control.mode === option.mode} onclick={() => setShareMode(option.mode)}>{option.label}</button>

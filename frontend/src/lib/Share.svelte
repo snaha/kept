@@ -2,40 +2,37 @@
   import QRCode from 'qrcode';
   import { onDestroy } from 'svelte'
   import Drawer from './Drawer.svelte';
-  import { shareLink, withMode, type ShareMode } from './sharing.svelte';
+  import { shareLinks, type ShareMode } from './sharing.svelte';
 
   let { onclose, from = 'bottom' }: { onclose: () => void; from?: 'bottom' | 'right' } = $props();
   // Control needs the desktop app's player to drive; a plain web deployment only has the library to offer
   const MODES: { mode: ShareMode; label: string; lead: string }[] = [
-    ...(window.desktop ? [{ mode: 'control' as const, label: 'Control', lead: 'scan to play music on this computer from a phone' }] : []),
+    { mode: 'control', label: 'Control', lead: 'scan to play music on this computer from a phone' },
     { mode: 'library', label: 'Library', lead: 'scan to play the library on a phone' },
   ];
-  let link = $state(''), qr = $state(''), error = $state('');
+  let codes = $state<Partial<Record<ShareMode, string>>>({}), error = $state('');
   let localHttp = $state(false)
-  let mode = $state<ShareMode>(MODES[0].mode);
-  const current = $derived(MODES.find(m => m.mode === mode)!);
+  let mode = $state<ShareMode>('library');
+  const modes = $derived(MODES.filter(option => codes[option.mode]))
+  const qr = $derived(codes[mode])
+  const current = $derived(MODES.find(option => option.mode === mode)!)
   const controller = new AbortController()
   const QR_WIDTH = 640
   onDestroy(() => controller.abort())
-  shareLink(controller.signal)
-    .then(value => {
+  const encode = (url: string) => QRCode.toDataURL(url, { width: QR_WIDTH, margin: 1, color: { dark: '#eeeeee', light: '#141414' } })
+  shareLinks(controller.signal)
+    .then(async links => {
+      const [library, control] = await Promise.all([encode(links.library), links.control && encode(links.control)])
       if (controller.signal.aborted) return
-      const url = new URL(value)
+      const url = new URL(links.library)
       const server = new URL(new URLSearchParams(url.hash.slice(1)).get('s')!)
       localHttp = url.protocol === 'http:' || server.protocol === 'http:'
-      link = value
+      codes = { library, control }
+      mode = control ? 'control' : 'library'
     })
     .catch((cause: unknown) => {
       if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'Sharing failed. Try again.'
     })
-  // one code per mode: the same account and server, only the mode the page opens in differs
-  $effect(() => {
-    if (!link) return;
-    const url = withMode(link, mode);
-    QRCode.toDataURL(url, { width: QR_WIDTH, margin: 1, color: { dark: '#eeeeee', light: '#141414' } })
-      .then(data => { if (!controller.signal.aborted && url === withMode(link, mode)) qr = data; })
-      .catch((cause: unknown) => { if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'Sharing failed. Try again.' });
-  });
   function select(next: ShareMode) { mode = next; requestAnimationFrame(() => document.getElementById(`share-tab-${next}`)?.focus()); }
 </script>
 
@@ -43,12 +40,12 @@
   <div class="body" class:right={from === 'right'}>
     {#if qr}
       <img class="qr" src={qr} alt="QR code to {mode === 'control' ? 'control this computer' : 'open this library'}" />
-      {#if MODES.length > 1}<div class="tabs" role="tablist" tabindex="-1" aria-label="Share mode" onkeydown={event => {
+      {#if modes.length > 1}<div class="tabs" role="tablist" tabindex="-1" aria-label="Share mode" onkeydown={event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault(); event.stopPropagation();
         select(event.key === 'Home' ? 'control' : event.key === 'End' ? 'library' : mode === 'control' ? 'library' : 'control');
       }}>
-        {#each MODES as m (m.mode)}
+        {#each modes as m (m.mode)}
           <button id="share-tab-{m.mode}" role="tab" aria-selected={mode === m.mode} tabindex={mode === m.mode ? 0 : -1} onclick={() => select(m.mode)}>{m.label}</button>
         {/each}
       </div>{/if}

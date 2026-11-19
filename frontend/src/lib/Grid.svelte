@@ -277,7 +277,7 @@
     }
     const index = shown.findIndex(tile => tile.id === wantedAlbum)
     if (index >= 0) untrack(() => finishReveal(index))
-    else if (!library.loading) {
+    else if (!library.loading && !library.artistLoading) {
       wantedAlbum = ''
       revealMessage = 'The playing album is not available in this library.'
     }
@@ -450,7 +450,7 @@
   {/if}
 </div>
 
-{#if !searching && !shown.length && !library.loading}
+{#if !searching && !shown.length && !library.loading && !library.artistLoading}
   <div class="empty-library" inert={covered}>
     {#if window.desktop && !library.tiles.length && !desktop.status?.musicFolder}
       <h2>Your music starts here.</h2>
@@ -469,7 +469,7 @@
 
 
 {#if library.scan.scanning}<div class="scan">indexing… {library.scan.count} songs</div>{/if}
-{#if library.loading}<div class="library-status" role="status">Loading music…</div>{/if}
+{#if library.loading || library.artistLoading}<div class="library-status" role="status">Loading music…</div>{/if}
 {#if currentDetails}{#key currentDetails.id}<CollectionDetails tile={currentDetails} onclose={() => (library.details = undefined)} />{/key}{/if}
 {#if library.error || library.scan.error}<div class="library-status" role="alert">{library.error || library.scan.error}</div>{/if}
 

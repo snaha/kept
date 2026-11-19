@@ -11,7 +11,7 @@ import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { assertProfileClosed, copyProfile, launchProfile, listProfiles, loadProfile, lockProfile, newProfile, readJSON, rememberProfile, saveProfile, selectedProfile } from './profiles.js';
+import { assertProfileClosed, copyProfile, launchProfile, listProfiles, loadProfile, lockProfile, newControlSecret, newProfile, readJSON, rememberProfile, saveProfile, selectedProfile } from './profiles.js'
 import { migrateStorage } from './storage-migration.js';
 import { normalizeMusicFolders, prepareMusicRoot, profileMusicFolders } from './music-folders.js';
 
@@ -57,13 +57,14 @@ const freePort = () => new Promise((resolve) => {
   s.listen(0, '0.0.0.0', () => { const { port } = s.address(); s.close(() => resolve(port)); });
 });
 
-// generated on first run and kept in the app's data folder: admin + share passwords and the two ports,
+// Kept in the app's data folder: account passwords, Control secret, and the two ports,
 // so QR codes and bookmarks stay valid across restarts; also the window frame choice
 const save = (dataDir, st) => writeFileSync(path.join(dataDir, 'credentials.json'), JSON.stringify(st), { mode: 0o600 });
 async function state(dataDir) {
   const file = path.join(dataDir, 'credentials.json');
   const st = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : { username: 'admin', password: randomBytes(18).toString('base64url') };
   st.sharePassword ??= randomBytes(12).toString('base64url');
+  st.controlSecret ||= newControlSecret()
   st.frame ??= true; // the OS's own title bar and window buttons
   if (!st.port || !(await isFree(st.port))) st.port = await freePort();
   if (!st.webPort || !(await isFree(st.webPort))) st.webPort = await freePort();
@@ -144,7 +145,7 @@ let st, local = '';
 const desktopStatus = () => ({
   phase, error: startupError, warning: startupWarning, onboarding: !config.setupComplete,
   url: local, username: st?.username || '', password: st?.password || '', frame: st?.frame ?? true,
-  share: st ? { webPort: st.webPort, port: st.port, password: st.sharePassword } : undefined,
+  share: st ? { webPort: st.webPort, port: st.port, password: st.sharePassword, controlSecret: st.controlSecret } : undefined,
   build, profile: { name: profile.name, label: config.label || (profile.existing ? 'Kept' : profile.name === 'default' ? 'Preview' : profile.name), directory: profile.directory, existing: profile.existing, portable: profile.portable },
   musicFolder: config.musicFolder || '', musicFolders: profileMusicFolders(config),
   defaultMusicFolder: app.getPath('music'), defaultMusicFolderAvailable: existsSync(app.getPath('music')), source: config.source,
@@ -298,7 +299,7 @@ app.whenReady().then(async () => {
         child.on('exit', (code, signal) => { if (navidrome === child && !app.isQuitting && phase === 'ready') { startupError = `The music server stopped (${signal || `exit ${code}`}). Restart Kept to reconnect.`; phase = 'error'; changed(); } });
         await waitFor(`${local}/rest/ping`, child);
         frontendServer = createFrontend();
-        control = attachControl(frontendServer, { sharePassword: st.sharePassword, hostPassword: st.password });
+        control = attachControl(frontendServer, { controlSecret: st.controlSecret, hostPassword: st.password });
         await listenFrontend(frontendServer, st.webPort);
         musicDatabase = new MusicDatabase(path.join(profile.directory, 'music.sqlite'));
         phase = 'ready';

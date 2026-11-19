@@ -1,5 +1,6 @@
 import { desktop } from './desktop.svelte'
-import { player, enqueue, next, play, prev, toggle, pause, setVolume, seek, setOrder, jumpRandom, jump, moveQueue, removeQueue, cancelCollectionLoading, type Order } from './player.svelte'
+import { coverUrl } from './api.svelte'
+import { player, enqueue, next, play, prev, toggle, pause, setVolume, seek, setOrder, jumpRandom, jump, moveQueue, removeQueue, cancelCollectionLoading, isQueuePermutation, replayQueue, type Order } from './player.svelte'
 import { pick, addCollection, gridFor, type Tile } from './library.svelte'
 import type { Track } from './music'
 
@@ -7,19 +8,20 @@ type Origin = NonNullable<Track['playbackOrigin']>
 export type ControlTrack = Omit<Track, 'cover' | 'playbackOrigin' | 'albumInfo' | 'origins'> & {
   origin?: Omit<Origin, 'cover'> & { coverId?: string }
 }
-export type ControlState = {
-  queue?: ControlTrack[]
+type PlaybackState = {
   playing: boolean
   pending: boolean
   time: number
   duration: number
   volume: number
   index: number
+  entryId?: string
   queueLength: number
   order: Order
   error: string
   loadingCollectionId: string
 }
+export type ControlState = PlaybackState & { queueRevision: number }
 export type ControlCommand =
   | { type: 'command'; name: 'toggle' | 'next' | 'prev' | 'pause' | 'cancel' }
   | { type: 'command'; name: 'volume'; value: number }
@@ -27,26 +29,70 @@ export type ControlCommand =
   | { type: 'command'; name: 'play' | 'add'; collection: Tile }
   | { type: 'command'; name: 'queue'; tracks: Track[] }
   | { type: 'command'; name: 'tracks'; tracks: Track[]; index: number }
+  | { type: 'command'; name: 'history'; tracks: Track[]; index: number; order: Order; permutation: number[] }
   | { type: 'command'; name: 'jump' | 'remove'; entryId: string }
   | { type: 'command'; name: 'move'; entryId: string; targetId: string }
   | { type: 'command'; name: 'order'; order: Order; collections: Tile[] }
   | { type: 'command'; name: 'random'; collections: Tile[] }
 
 const RETRY_MS = 3000
+// JSON escaping takes at most six bytes per UTF-16 code unit. Leave room for the envelope.
+const QUEUE_PART_LENGTH = 32 * 1024
 const HOST_REPLACED_CODE = 4000
-const MAX_COMMAND_ITEMS = 10000
+export const MAX_COMMAND_ITEMS = 10000
 const MAX_RANDOM_TRACKS = 1000000
+const TRACK_COVER_SIZE = 512
+export const TRACK_LIMIT_ERROR = `The computer accepts up to ${MAX_COMMAND_ITEMS} tracks at a time. Choose fewer tracks.`
 const text = (value: unknown) => typeof value === 'string' && value.length > 0
-const isCollection = (value: unknown): value is Tile => {
+const optionalText = (value: unknown) => typeof value === 'string' ? value : undefined
+const optionalNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : undefined
+const isOrder = (value: unknown): value is Order => value === 'normal' || value === 'shuffle' || value === 'random'
+
+function coverIdFromUrl(value: unknown) {
+  if (typeof value !== 'string' || !value) return undefined
+  try {
+    const url = new URL(value)
+    return url.pathname === '/rest/getCoverArt' ? url.searchParams.get('id') ?? undefined : undefined
+  } catch {
+    return undefined
+  }
+}
+function readOrigin(value: unknown): Origin | undefined {
+  const origin = value as Origin
+  if (!origin || typeof origin !== 'object' || !text(origin.id) || !text(origin.rawId) || origin.source !== 'local' || typeof origin.title !== 'string') return undefined
+  if (origin.kind !== 'album' && origin.kind !== 'artist' && origin.kind !== 'playlist') return undefined
+  return {
+    id: origin.id, rawId: origin.rawId, source: origin.source, kind: origin.kind, title: origin.title,
+    cover: coverUrl(coverIdFromUrl(origin.cover)),
+  }
+}
+function readCollection(value: unknown): Tile | undefined {
+  const origin = readOrigin(value)
   const c = value as Tile
-  return !!c && typeof c === 'object' && text(c.id) && text(c.rawId) && c.source === 'local' && ['album', 'artist', 'playlist'].includes(c.kind) && typeof c.title === 'string' && Number.isSafeInteger(c.count) && c.count >= 0 && c.count <= MAX_RANDOM_TRACKS && typeof c.available === 'boolean'
+  if (!origin || !Number.isSafeInteger(c.count) || c.count < 0 || c.count > MAX_RANDOM_TRACKS || typeof c.available !== 'boolean') return undefined
+  return { ...origin, count: c.count, available: c.available, sub: optionalText(c.sub) ?? '', indexing: c.indexing === true }
 }
-const isTrack = (value: unknown): value is Track => {
+function readTrack(value: unknown): Track | undefined {
   const t = value as Track
-  return !!t && typeof t === 'object' && text(t.id) && text(t.rawId) && t.source === 'local' && typeof t.title === 'string' && typeof t.cover === 'string' && typeof t.available === 'boolean'
+  if (!t || typeof t !== 'object' || !text(t.id) || !text(t.rawId) || t.source !== 'local' || typeof t.title !== 'string' || typeof t.available !== 'boolean') return undefined
+  const coverId = optionalText(t.coverId)
+  return {
+    id: t.id, rawId: t.rawId, source: t.source, title: t.title, available: t.available,
+    artist: optionalText(t.artist), album: optionalText(t.album), albumId: optionalText(t.albumId),
+    coverId, cover: coverUrl(coverId, TRACK_COVER_SIZE),
+    duration: optionalNumber(t.duration), track: optionalNumber(t.track), disc: optionalNumber(t.disc),
+    playbackOrigin: readOrigin(t.playbackOrigin), playbackOriginIndex: optionalNumber(t.playbackOriginIndex),
+  }
 }
-function items<T>(value: unknown, guard: (item: unknown) => item is T): value is T[] {
-  return Array.isArray(value) && value.length <= MAX_COMMAND_ITEMS && value.every(guard)
+function readItems<T>(value: unknown, readItem: (item: unknown) => T | undefined): T[] | undefined {
+  if (!Array.isArray(value) || value.length > MAX_COMMAND_ITEMS) return undefined
+  const items: T[] = []
+  for (const item of value) {
+    const parsed = readItem(item)
+    if (!parsed) return undefined
+    items.push(parsed)
+  }
+  return items
 }
 function playableScope(collections: Tile[]) {
   const count = collections.filter(tile => tile.available).reduce((sum, tile) => sum + Math.max(1, tile.count), 0)
@@ -56,21 +102,19 @@ function playableScope(collections: Tile[]) {
 }
 function wireTrack(track: Track): ControlTrack {
   const origin = track.playbackOrigin
-  let coverId: string | undefined
-  try { coverId = origin?.cover ? new URL(origin.cover).searchParams.get('id') ?? undefined : undefined } catch { /* Non-local artwork has no portable ID. */ }
   return {
     id: track.id, rawId: track.rawId, source: track.source, title: track.title, artist: track.artist,
     album: track.album, albumId: track.albumId, coverId: track.coverId, duration: track.duration,
     track: track.track, disc: track.disc, available: track.available,
     queueEntryId: track.queueEntryId, playbackOriginIndex: track.playbackOriginIndex,
-    origin: origin ? { id: origin.id, rawId: origin.rawId, source: origin.source, kind: origin.kind, title: origin.title, coverId } : undefined,
+    origin: origin ? { id: origin.id, rawId: origin.rawId, source: origin.source, kind: origin.kind, title: origin.title, coverId: coverIdFromUrl(origin.cover) } : undefined,
   }
 }
-export function controlState(queue = player.queue.map(wireTrack), time = Math.floor(player.time)): ControlState {
+function controlState(time = Math.floor(player.time)): PlaybackState {
   return {
-    queue, playing: player.playing, pending: player.pending || player.randomRequesting,
+    playing: player.playing, pending: player.pending || player.randomRequesting,
     time, duration: Math.round(player.duration), volume: player.volume,
-    index: player.index, queueLength: queue.length, order: player.order,
+    index: player.index, entryId: player.song?.queueEntryId, queueLength: player.queue.length, order: player.order,
     error: player.error, loadingCollectionId: player.loadingCollectionId,
   }
 }
@@ -86,21 +130,42 @@ export function applyCommand(command: unknown) {
     case 'prev': return prev()
     case 'volume': return Number.isFinite(c.value) ? setVolume(c.value) : undefined
     case 'seek': return Number.isFinite(c.value) && c.entryId === player.song?.queueEntryId ? void seek(c.value) : undefined
-    case 'play': return isCollection(c.collection) ? void pick(c.collection) : undefined
-    case 'add': return isCollection(c.collection) ? void addCollection(c.collection) : undefined
-    case 'queue': return items(c.tracks, isTrack) ? enqueue(c.tracks) : undefined
-    case 'tracks': return items(c.tracks, isTrack) && Number.isInteger(c.index) && c.index >= 0 && c.index < c.tracks.length ? void play(c.tracks, c.index) : undefined
+    case 'play':
+    case 'add': {
+      const collection = readCollection(c.collection)
+      if (!collection) return
+      if (c.name === 'add') return void addCollection(collection, { revealQueue: false })
+      if (collection.kind !== 'artist') void pick(collection)
+      return
+    }
+    case 'queue':
+    case 'tracks':
+    case 'history': {
+      if (Array.isArray(c.tracks) && c.tracks.length > MAX_COMMAND_ITEMS) {
+        player.error = TRACK_LIMIT_ERROR
+        return
+      }
+      const tracks = readItems(c.tracks, readTrack)
+      if (!tracks) return
+      if (c.name !== 'queue' && (!Number.isInteger(c.index) || c.index < 0 || c.index >= tracks.length)) return
+      if (c.name === 'history' && (!isOrder(c.order) || !isQueuePermutation(c.permutation, c.order === 'shuffle' ? tracks.length : 0))) return
+      if (player.error === TRACK_LIMIT_ERROR) player.error = ''
+      if (c.name === 'queue') return enqueue(tracks, { revealQueue: false })
+      if (c.name === 'history') return void replayQueue(tracks, c.index, c.order, c.permutation)
+      return void play(tracks, c.index)
+    }
     case 'jump': { const index = position(c.entryId); if (index >= 0) jump(index); return }
     case 'remove': { const index = position(c.entryId); if (index >= 0) removeQueue(index); return }
     case 'move': { const from = position(c.entryId), to = position(c.targetId); if (from >= 0 && to >= 0) moveQueue(from, to); return }
     case 'order':
-      if (!['normal', 'shuffle', 'random'].includes(c.order) || !items(c.collections, isCollection)) return
-      if (c.order === 'random' && !playableScope(c.collections)) return
-      return setOrder(c.order, () => gridFor(c.collections))
-    case 'random':
-      if (!items(c.collections, isCollection)) return
-      if (!playableScope(c.collections)) return
-      return jumpRandom(() => gridFor(c.collections))
+    case 'random': {
+      if (c.name === 'order' && !isOrder(c.order)) return
+      const collections = readItems(c.collections, readCollection)
+      if (!collections) return
+      if ((c.name === 'random' || c.order === 'random') && !playableScope(collections)) return
+      const grid = () => gridFor(collections)
+      return c.name === 'order' ? setOrder(c.order, grid) : jumpRandom(grid, { replaceScope: true })
+    }
   }
 }
 
@@ -110,7 +175,8 @@ export function startControlHost(socket: (url: string) => WebSocket = url => new
   let retry: ReturnType<typeof setTimeout> | undefined
   let url = ''
   let lastQueue: ControlTrack[] | undefined
-  let latest: ControlState
+  let queueRevision = 0
+  let latest: { state: PlaybackState; queue: ControlTrack[] } | undefined
   const close = () => {
     clearTimeout(retry)
     retry = undefined
@@ -118,19 +184,33 @@ export function startControlHost(socket: (url: string) => WebSocket = url => new
     ws = undefined
     old?.close()
   }
-  const publish = (state: ControlState) => {
-    latest = state
+  const publish = (state: PlaybackState, queue: ControlTrack[]) => {
+    latest = { state, queue }
     if (ws?.readyState !== WebSocket.OPEN) return
-    const queue = state.queue === lastQueue ? undefined : state.queue
-    ws.send(JSON.stringify({ type: 'state', state: { ...state, queue } }))
-    lastQueue = state.queue
+    const queueChanged = queue !== lastQueue
+    if (queueChanged) queueRevision++
+    // The relay and phone establish the new revision before receiving its chunks.
+    ws.send(JSON.stringify({ type: 'state', state: { ...state, queueRevision } }))
+    if (!queueChanged) return
+    lastQueue = queue
+    const serialized = JSON.stringify(queue)
+    for (let offset = 0; offset < serialized.length; offset += QUEUE_PART_LENGTH) {
+      const end = offset + QUEUE_PART_LENGTH
+      ws.send(JSON.stringify({
+        type: 'queue', queueRevision, first: offset === 0, complete: end >= serialized.length, part: serialized.slice(offset, end),
+      }))
+    }
   }
   const connect = () => {
     if (!url) return
     const mine = socket(url)
     ws = mine
     lastQueue = undefined
-    mine.onopen = () => { if (ws === mine) publish(latest ?? controlState()) }
+    mine.onopen = () => {
+      if (ws !== mine) return
+      if (latest) publish(latest.state, latest.queue)
+      else publish(controlState(), player.queue.map(wireTrack))
+    }
     mine.onmessage = event => {
       if (ws !== mine) return
       try { applyCommand(JSON.parse(String(event.data))) } catch { player.error = 'The remote command could not be applied. Please try again.' }
@@ -140,7 +220,7 @@ export function startControlHost(socket: (url: string) => WebSocket = url => new
   const stop = $effect.root(() => {
     const queue = $derived(player.queue.map(wireTrack))
     const time = $derived(Math.floor(player.time))
-    const state = $derived(controlState(queue, time))
+    const state = $derived(controlState(time))
     $effect(() => {
       const status = desktop.status
       const next = status?.phase === 'ready' && status.share ? `ws://127.0.0.1:${status.share.webPort}/control?h=${encodeURIComponent(status.password)}` : ''
@@ -149,7 +229,7 @@ export function startControlHost(socket: (url: string) => WebSocket = url => new
       close()
       connect()
     })
-    $effect(() => publish(state))
+    $effect(() => publish(state, queue))
   })
   return () => { stop(); url = ''; close() }
 }

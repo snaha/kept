@@ -37,6 +37,7 @@
     "asar": false,
     "files": [
       "main.js",
+      "control-relay.js",
       "profiles.js",
       "music-folders.js",
       "storage-migration.js",

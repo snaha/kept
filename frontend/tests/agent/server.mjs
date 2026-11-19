@@ -69,7 +69,7 @@ const server = http.createServer(async (req, res) => {
     res.end(file.endsWith('index.html') ? data.toString().replace('<head>', `<head>${injection}`) : data);
   } catch { res.writeHead(404).end('Not found; build the frontend first.'); }
 });
-const controlRelay = controlAudit ? attachControl(server, { sharePassword: 'share-test-only', hostPassword: 'test-only' }) : undefined
+const controlRelay = controlAudit ? attachControl(server, { controlSecret: 'control-test-only', hostPassword: 'test-only' }) : undefined
 server.listen(port, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${server.address().port}`
   console.log(`Music regression fixture: ${url} (synthetic local library, real silent WAV playback)`)

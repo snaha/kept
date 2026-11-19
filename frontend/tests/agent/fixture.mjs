@@ -9,7 +9,7 @@ export const bootstrap = (controlAudit = false) => {
     profile: { name: 'audit', label: 'Synthetic audit', directory: '/synthetic/Data/profiles/audit', existing: false, portable: true },
     musicFolder: '/synthetic/Music', musicFolders: ['/synthetic/Music'], defaultMusicFolder: '/synthetic/Music', defaultMusicFolderAvailable: true, source: 'local', canCopy: false,
   };
-  if (controlAudit) desktopStatus.share = { webPort: Number(location.port), port: Number(location.port), password: 'share-test-only' };
+  if (controlAudit) desktopStatus.share = { webPort: Number(location.port), port: Number(location.port), password: 'share-test-only', controlSecret: 'control-test-only' };
   const listeners = new Set();
   w.__auditDesktopCommands = [];
   const changed = changes => { Object.assign(desktopStatus, changes); for (const listener of listeners) listener(structuredClone(desktopStatus)); };
@@ -27,8 +27,8 @@ export const bootstrap = (controlAudit = false) => {
   };
   if (controlAudit && new URLSearchParams(location.search).has('phone')) {
     delete w.desktop;
-    localStorage.setItem('creds', JSON.stringify({ url: location.origin, username: 'share', password: 'share-test-only' }));
-    localStorage.setItem('share.phone', JSON.stringify({ mode: 'control', password: 'share-test-only' }));
+    localStorage.setItem('creds', JSON.stringify({ url: location.origin, username: 'share', password: 'share-test-only', controlSecret: 'control-test-only' }));
+    localStorage.setItem('share.phone', 'control');
   }
   const scope = crypto.randomUUID();
   const historyCall = async (method, args) => {

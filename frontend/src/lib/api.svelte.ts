@@ -2,11 +2,11 @@ import { readJsonPreference, readPreference, writePreference } from './preferenc
 import { SubsonicAPI } from 'subsonic-api';
 import { serverUrl } from './connection-security'
 import { randomId } from './random-id'
-import { rememberShare } from './control-client.svelte'
+import { setShareMode } from './control-client.svelte'
 
-type Creds = { url: string; username: string; password: string };
+type Creds = { url: string; username: string; password: string; controlSecret?: string };
 
-export const session = $state<{ api: SubsonicAPI | null; base: string; authQs: string; username: string; admin: boolean; error: string }>({
+export const session = $state<{ api: SubsonicAPI | null; base: string; authQs: string; username: string; admin: boolean; error: string; controlSecret?: string }>({
   api: null, base: '', authQs: '', username: '', admin: false, error: '',
 });
 
@@ -16,14 +16,14 @@ export function ok<T extends { status: string }>(r: T): T {
   return r;
 }
 
-export async function login(c: Creds) {
+export async function login({ url, username, password, controlSecret }: Creds) {
   session.error = ''
-  const base = serverUrl(c.url)
+  const base = serverUrl(url)
   // ponytail: one salt per install keeps cover and stream URLs identical across runs, so the browser cache serves them
   const salt = readPreference('auth.salt') || randomId()
   writePreference('auth.salt', salt);
   const api = new SubsonicAPI({
-    url: base, auth: { username: c.username, password: c.password }, salt, reuseSalt: true,
+    url: base, auth: { username, password }, salt, reuseSalt: true,
     fetch: (input, init) => fetch(input, { ...init, redirect: 'error' }),
   })
   const r = await api.ping(); // the library resolves failures, so check status ourselves
@@ -31,12 +31,14 @@ export async function login(c: Creds) {
   // ponytail: capture the token/salt query once so cover and stream URLs can be built synchronously
   const u = new URL(await api.getCoverArtURL({ id: '-' }));
   u.searchParams.delete('id');
-  session.api = api; session.base = base; session.authQs = u.searchParams.toString(); session.username = c.username;
-  session.admin = ok(await api.getUser({ username: c.username })).user.adminRole;
-  writePreference('creds', JSON.stringify(c));
+  const admin = ok(await api.getUser({ username })).user.adminRole;
+  session.api = api; session.base = base; session.authQs = u.searchParams.toString(); session.username = username;
+  session.admin = admin;
+  session.controlSecret = controlSecret;
+  writePreference('creds', JSON.stringify({ url, username, password, controlSecret }));
 }
 
-export function logout() { writePreference('creds', null); session.api = null; }
+export function logout() { writePreference('creds', null); session.controlSecret = undefined; session.api = null; }
 
 export async function restore() {
   session.error = ''
@@ -50,9 +52,9 @@ export async function restore() {
     history.replaceState(null, '', location.pathname);
     try {
       const base = serverUrl(h.get('s')!)
-      await login({ url: base, username: h.get('u')!, password: h.get('p')! })
-      // Existing links without a mode keep playing here; new Control links opt in explicitly.
-      rememberShare(h.get('m') === 'control' ? 'control' : 'library', h.get('p')!)
+      const controlSecret = h.get('m') === 'control' ? h.get('c') || undefined : undefined
+      await login({ url: base, username: h.get('u')!, password: h.get('p')!, controlSecret })
+      if (controlSecret) setShareMode('control')
     } catch (error) { failed(error) }
     return
   }
@@ -63,7 +65,11 @@ export async function restore() {
     return;
   }
   const saved = readJsonPreference<Partial<Creds> | null>('creds', null);
-  if (saved && typeof saved.url === 'string' && typeof saved.username === 'string' && typeof saved.password === 'string') await login(saved as Creds).catch(failed)
+  if (saved && typeof saved.url === 'string' && typeof saved.username === 'string' && typeof saved.password === 'string') {
+    const { url, username, password } = saved
+    const controlSecret = typeof saved.controlSecret === 'string' ? saved.controlSecret : undefined
+    await login({ url, username, password, controlSecret }).catch(failed)
+  }
 }
 
 export const coverUrl = (id: string | undefined, size = 300) =>
