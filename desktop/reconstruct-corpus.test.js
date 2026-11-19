@@ -62,7 +62,7 @@ test('offline, the corpus is repaired from local evidence with no false merge an
     throw new Error('The offline corpus attempted a MusicBrainz request')
   }
   try {
-    assert.deepEqual(store.getConsent(), { 'online-lookups': 'not-asked', acoustid: 'not-asked' })
+    assert.deepEqual(store.getConsent(), { 'online-lookups': 'not-asked', acoustid: 'not-asked', spotify: 'not-asked' })
     // The real client is handed to the ladder: with lookups off it must never be called.
     const runs = await reconstructAll(store, {
       now: T0 + 1,

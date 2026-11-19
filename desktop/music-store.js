@@ -38,7 +38,7 @@ export class MusicStore {
         if (!cachedContexts.has(entry.contextId)) { const row = getContext.get(scope, entry.contextId); if (row) cachedContexts.set(entry.contextId, JSON.parse(row.data)); }
         const context = cachedContexts.get(entry.contextId);
         const track = context?.queue[entry.index];
-        if (!track || typeof track.id !== 'string' || typeof track.rawId !== 'string' || typeof track.title !== 'string' || track.source !== 'local' || typeof entry.id !== 'string' || !Number.isInteger(entry.index) || !Number.isInteger(entry.cursor) || !Number.isSafeInteger(entry.playedAt) || entry.playedAt <= 0 || entry.playedAt > 8640000000000000) throw new Error('Invalid listening event');
+        if (!track || typeof track.id !== 'string' || typeof track.rawId !== 'string' || typeof track.title !== 'string' || !['local', 'spotify'].includes(track.source) || typeof entry.id !== 'string' || !Number.isInteger(entry.index) || !Number.isInteger(entry.cursor) || !Number.isSafeInteger(entry.playedAt) || entry.playedAt <= 0 || entry.playedAt > 8640000000000000) throw new Error('Invalid listening event');
         const origin = track.playbackOrigin || context.origin;
         const result = put.run(scope, entry.id, entry.contextId, track.id, track.source, origin?.id ?? null, origin?.kind ?? null, entry.index, entry.cursor, entry.playedAt);
         if (result.changes) index.run(scope, entry.id, track.title, track.artist || '', track.album || '', origin?.title || '');

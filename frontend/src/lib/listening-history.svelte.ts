@@ -12,6 +12,7 @@ export type ListeningStats = Record<string, { plays: number; lastPlayed: number 
 const browserStats = $state({ values: {} as ListeningStats });
 export const listeningHistory = $state({ persistedRevision: 0, entries: [] as HistoryEntry[], total: 0, hasMore: false, loading: false, query: '', error: '' });
 let account = '';
+let browserPriming: { api: typeof session.api; pending: Promise<boolean> } | undefined
 let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
 let operations: Promise<unknown> = Promise.resolve();
 let queryRevision = 0;
@@ -62,7 +63,17 @@ export function loadHistory() {
     unsaved.set(batch.scope, [...(unsaved.get(batch.scope) || []), batch]);
     enqueue(async () => { await bridge.write({ ...batch, entries: [...batch.entries].reverse(), importKey }); if (importKey === account) listeningHistory.persistedRevision++; const pending = unsaved.get(batch.scope); if (pending) unsaved.set(batch.scope, pending.filter(item => item !== batch)); });
     void searchHistory('');
+  } else if (session.api && listeningHistory.entries.length) {
+    const contexts = new Map(listeningHistory.entries.map(({ context }) => [context.id, context]))
+    const pending = primePlayback([...contexts.values()].flatMap(context => context.queue))
+    browserPriming = { api: session.api, pending }
+    void pending.finally(() => { if (browserPriming?.pending === pending) browserPriming = undefined })
   }
+}
+
+export function prepareBrowserHistoryPlayback(queue: Track[]) {
+  if (browserPriming && browserPriming.api === session.api) return browserPriming.pending
+  return primePlayback(queue)
 }
 function snapshot(entries = listeningHistory.entries, changedContext?: ListeningContext, onlyNew = false) {
   const contexts = new Map(entries.map(e => [e.context.id, e.context]));

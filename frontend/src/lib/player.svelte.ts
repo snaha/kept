@@ -5,9 +5,11 @@ import { session, streamUrl } from './api.svelte';
 import { PlaybackController, type PlaybackAdapter } from './playback-controller';
 import { shuffle } from './shuffle';
 import { resolveTrackPlayback, type PlaybackRef } from './playback-ref';
+import { createSpotifyAdapter } from './spotify-adapter';
+import { spotify, spotifyBridge, spotifyReady, onSpotifySignOut } from './spotify.svelte';
 import type { Track, Collection } from './music';
 import { watchPlaybackActivity } from './playback-activity';
-import { recordHistory, saveHistory, historyTrack, type ListeningContext, type HistoryEntry } from './listening-history.svelte';
+import { recordHistory, saveHistory, historyTrack, prepareBrowserHistoryPlayback, type ListeningContext, type HistoryEntry } from './listening-history.svelte';
 
 export type Order = 'normal' | 'shuffle' | 'random';
 export type Grid = { count: number; key: string; find(albumId: string): number; song(n: number): Promise<Track | undefined> };
@@ -52,25 +54,69 @@ function remember(index: number) {
   recordHistory(historyContext, index, cursor);
 }
 
-const streamOf = (ref: PlaybackRef) => streamUrl(ref.songId)
+const streamOf = (ref: PlaybackRef | undefined) => ref?.kind === 'navidrome-stream' ? streamUrl(ref.songId) : undefined
 function clearWarm() { if (!warmAudio) return; warmAudio.removeAttribute('src'); warmAudio.load(); }
 function scrobble(track: Track, submission: boolean) {
   const ref = resolveTrackPlayback(track);
-  if (ref) session.api?.scrobble({ id: ref.songId, submission }).catch(() => {});
+  if (ref?.kind === 'navidrome-stream') session.api?.scrobble({ id: ref.songId, submission }).catch(() => {});
 }
 const localAdapter: PlaybackAdapter = {
   available(track) { initPlayback(); if (track.source !== 'local') throw new Error('This build plays local music only.'); if (!session.api || !track.available || !resolveTrackPlayback(track)) throw new Error('Local track unavailable. Check your music library.'); },
   async prepare(track) {
     graph?.ctx.resume();
     const ref = resolveTrackPlayback(track); if (!ref) throw new Error('Local track unavailable. Check your music library.');
-    const url = streamOf(ref); if (audio.src !== url) { audio.src = url; audio.load(); }
+    const url = streamOf(ref); if (!url) throw new Error('Local track unavailable. Check your music library.'); if (audio.src !== url) { audio.src = url; audio.load(); }
   },
   async start(track) { localTrack = track; scrobbled = false; audio.currentTime = 0; await audio.play(); scrobble(track, false); },
   async pause() { audio.pause(); },
   async resume() { graph?.ctx.resume(); await audio.play(); },
   async seek(seconds) { audio.currentTime = seconds; },
 };
-const controller = new PlaybackController({ local: localAdapter });
+// Spotify plays on the user's own Spotify device, driven from the main process. It is a second adapter
+// of the same controller: it adds no await to the local play and skip path.
+const spotifyCommands = {
+  command(action: 'play' | 'pause' | 'resume' | 'seek', value?: string | number) {
+    const bridge = spotifyBridge(); if (!bridge) throw new Error('Spotify is not available in this build.');
+    return bridge.command(action, value);
+  },
+  playback() { const bridge = spotifyBridge(); if (!bridge) throw new Error('Spotify is not available in this build.'); return bridge.playback(); },
+};
+const spotifyAdapter = createSpotifyAdapter({
+  commands: spotifyCommands, ready: spotifyReady, connected: () => spotify.connected, resolve: resolveTrackPlayback,
+  observer: {
+    progress(trackId, seconds, duration) { if (controller.active === 'spotify' && !player.pending && player.song?.rawId === trackId) { player.time = seconds; if (duration) player.duration = duration; } },
+    ended(trackId, devicePlaying) {
+      if (controller.active !== 'spotify') return
+      if (!devicePlaying) controller.releaseSource('spotify')
+      if (!player.pending && player.song?.rawId === trackId) {
+        // Autoplay needs to stop even if the queue cannot start a successor.
+        if (devicePlaying) void controller.retire('spotify').catch(() => {})
+        playing(false)
+        next()
+      }
+    },
+    lost(message) {
+      if (controller.active !== 'spotify') return
+      controller.releaseSource('spotify')
+      if (!player.pending) fail(new Error(message))
+    },
+    paused(trackId) { if (controller.active === 'spotify' && !player.pending && player.song?.rawId === trackId) playing(false); },
+    resumed(trackId) { if (controller.active === 'spotify' && !player.pending && player.song?.rawId === trackId) playing(true); },
+  },
+});
+const controller = new PlaybackController({ local: localAdapter, spotify: spotifyAdapter });
+// Signing out of Spotify while it owns playback: stop the device, drop the poll, release ownership, show it paused.
+onSpotifySignOut(async () => {
+  const selected = player.song?.source === 'spotify'
+  if (controller.active !== 'spotify' && !selected) return
+  const mine = selected ? ++intent : undefined
+  await controller.retire('spotify').catch(() => {})
+  spotifyAdapter.stop()
+  if (mine === undefined || mine !== intent) return
+  player.pending = false
+  player.suspended = true
+  playing(false)
+})
 
 function playing(value: boolean) {
   player.playing = value;
@@ -104,19 +150,21 @@ function prepareNext() {
   if (!playbackListeners) return;
   const i = player.order === 'shuffle' ? perm[cursor + 1] : player.index + 1;
   const track = player.queue[i];
-  const ref = track?.source === 'local' ? resolveTrackPlayback(track) : undefined;
-  if (ref) warmAudio.src = streamOf(ref);
+  const url = track?.source === 'local' ? streamOf(resolveTrackPlayback(track)) : undefined;
+  if (url) warmAudio.src = url;
   else clearWarm();
 }
 function blocked(track: Track | undefined) {
-  if (track && track.source !== 'local') { player.error = 'This build plays local music only.'; return true; }
+  // Spotify not ready is known now: refuse before the queue is replaced, so the playing track and the queue stay as they were.
+  if (track?.source === 'spotify') { try { controller.available(track); } catch (error) { player.error = (error as Error).message; player.view = 'settings'; return true; } }
+  if (track && !controller.supports(track.source)) { player.error = 'This build cannot play this music source.'; return true; }
   if (track && !track.available) { player.error = 'This track is unavailable. Check its music folder or skip it.'; return true; }
   return false;
 }
 async function start(index: number) {
   const track = player.queue[index]; if (!track) return;
   if (blocked(track)) { player.blockedIndex = index; return; }
-  try { localAdapter.available(track); }
+  try { initPlayback(); controller.available(track); }
   catch (error) { player.error = (error as Error).message; player.view = 'settings'; return; }
   player.blockedIndex = -1;
   const mine = ++intent;
@@ -252,8 +300,23 @@ export function jumpRandom(source: () => Grid) {
 export function replayHistory(entry: HistoryEntry) {
   const context = entry.context;
   logPlayback('history-selected', { entryId: entry.id, contextId: context.id, index: entry.index });
-  const queue = context.queue.map(historyTrack);
-  if (blocked(queue[entry.index])) return;
+  const selected = context.queue[entry.index]
+  if (!window.desktop && selected?.catalogRef?.kind === 'asset' && !resolveTrackPlayback(selected)) {
+    const api = session.api
+    const selection = ++player.requestRevision
+    const transport = intent
+    void prepareBrowserHistoryPlayback(context.queue).then(() => {
+      if (api !== session.api || selection !== player.requestRevision || transport !== intent) return
+      if (resolveTrackPlayback(selected)) replayPreparedHistory(entry)
+      else player.error = 'Local track unavailable. Check your music library.'
+    })
+    return
+  }
+  replayPreparedHistory(entry)
+}
+function replayPreparedHistory(entry: HistoryEntry) {
+  const context = entry.context
+  const queue = context.queue.map(historyTrack)
   // Start the chosen occurrence, then restore the exact shuffle permutation.
   const previousOrder = player.order;
   player.order = 'normal';
@@ -346,6 +409,7 @@ if (jobsBridge) watchPlaybackActivity(audio, report => jobsBridge.reportPlayback
 }
 export function disposePlayback() {
   intent++; queueVersion++; player.requestRevision++; cancelRandomLookup(); cancelPlayOperations();
+  spotifyAdapter.stop()
   controller.release(); playbackListeners?.abort(); playbackListeners = undefined;
   if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
   clearWarm(); localTrack = undefined;

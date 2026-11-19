@@ -16,8 +16,8 @@ export class PlaybackController {
   private tail: Promise<void> = Promise.resolve();
   active: Source | undefined;
   current: Track | undefined;
-  private adapters: Record<Source, PlaybackAdapter>;
-  constructor(adapters: Record<Source, PlaybackAdapter>) { this.adapters = adapters; }
+  private adapters: Partial<Record<Source, PlaybackAdapter>>;
+  constructor(adapters: Partial<Record<Source, PlaybackAdapter>>) { this.adapters = adapters; }
 
   private schedule(operation: (current: () => boolean) => Promise<void>) {
     const revision = ++this.revision;
@@ -29,12 +29,28 @@ export class PlaybackController {
     return task;
   }
 
+  supports(source: Source) { return !!this.adapters[source]; }
+
+  // Synchronous pre-check for a track's own adapter, so play and skip add no await.
+  available(track: Track) {
+    const adapter = this.adapters[track.source];
+    if (!adapter) throw new Error('This music source is not supported by this build.');
+    adapter.available(track);
+  }
+
   play(track: Track) {
     return this.schedule(async (current) => {
       const next = this.adapters[track.source];
       if (!next) throw new Error('This music source is not supported by this build.');
       next.available(track);
-      if (this.active) await this.adapters[this.active].pause();
+      const outgoing = this.active
+      if (outgoing) {
+        try { await this.adapters[outgoing]?.pause() }
+        catch (error) {
+          if (outgoing !== 'spotify' || track.source !== 'local') throw error
+          this.releaseSource(outgoing)
+        }
+      }
       if (!current()) return;
       await next.prepare(track);
       if (!current()) return;
@@ -44,9 +60,25 @@ export class PlaybackController {
       if (!current()) await next.pause();
     });
   }
-  pause() { return this.schedule(async () => { if (this.active) await this.adapters[this.active].pause(); }); }
-  resume() { return this.schedule(async () => { if (this.active) await this.adapters[this.active].resume(); }); }
-  seek(seconds: number) { return this.schedule(async () => { if (this.active) await this.adapters[this.active].seek(seconds); }); }
+  pause() { return this.schedule(async () => { if (this.active) await this.adapters[this.active]?.pause(); }); }
+  resume() { return this.schedule(async () => { if (this.active) await this.adapters[this.active]?.resume(); }); }
+  seek(seconds: number) { return this.schedule(async () => { if (this.active) await this.adapters[this.active]?.seek(seconds); }); }
+  // A lost source has nothing left to pause. Already queued intentions still own the lane.
+  releaseSource(source: Source) {
+    if (this.active !== source) return
+    this.active = undefined
+    this.current = undefined
+  }
+  // Sign-out must finish retiring its source before later commands enter the lane.
+  retire(source: Source) {
+    const task = this.tail.catch(() => {}).then(async () => {
+      if (this.active !== source) return
+      try { await this.adapters[source]?.pause() }
+      finally { this.releaseSource(source) }
+    })
+    this.tail = task
+    return task
+  }
   // Remember the outgoing adapter so an explicit retry still stops it before a handoff.
   suspend() { this.revision++; }
   // Release playback ownership without sending a command back.
