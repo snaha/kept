@@ -25,7 +25,9 @@ export const CATALOG_METHODS = Object.freeze([
   'listCatalogAlbums', 'getCatalogAlbum', 'searchCatalog', 'getPlaybackLinks', 'rebuildProjections', 'verifyProjections',
 ])
 // Not part of CatalogService: the scanner's memory of which file had which payload hash.
-export const STORE_METHODS = Object.freeze([...CATALOG_METHODS, 'fileHashes', 'storeFileHashes', ...JOB_METHODS, ...RECONSTRUCT_METHODS])
+// analysisCandidates is the analyser's view of the assets.
+export const STORE_METHODS = Object.freeze([...CATALOG_METHODS, 'fileHashes', 'storeFileHashes', 'analysisCandidates', ...JOB_METHODS, ...RECONSTRUCT_METHODS])
+export const MAX_CANDIDATE_PAGE = 500
 
 // Entry n takes the schema from version n to n + 1. Never edit a released entry: add one.
 const MIGRATIONS = [`
@@ -757,6 +759,32 @@ export class CatalogStore {
       return this.get('SELECT body FROM album_projection WHERE album_id=?', id)?.body !== JSON.stringify(projected) || JSON.stringify(indexed) !== JSON.stringify(expected)
     })
     return { consistent: differing.length === 0, albums: albums.length, differing: differing.slice(0, MAX_REPORTED_DIFFERENCES) }
+  }
+
+  // Every asset in ID order, a page at a time, with what the analyser must know before it reads one:
+  // whether its sources allow analysis, where it is, and the album it belongs to. next continues the listing.
+  analysisCandidates(request = {}) {
+    const limit = request.limit ?? MAX_CANDIDATE_PAGE
+    if (!optional(request.after, isText) || !Number.isSafeInteger(limit) || limit < 1 || limit > MAX_CANDIDATE_PAGE) throw invalid('candidates')
+    const rows = this.all(`WITH page AS (SELECT id, duration FROM assets WHERE id > ? ORDER BY id LIMIT ?)
+      SELECT a.id, a.duration, t.album_id, l.source_id, l.path, l.availability, s.analysis_allowed
+      FROM page a LEFT JOIN album_tracks t ON t.asset_id=a.id
+      LEFT JOIN locations l ON l.asset_id=a.id LEFT JOIN sources s ON s.id=l.source_id
+      ORDER BY a.id, l.rowid`, request.after ?? '', limit)
+    const byId = new Map()
+    for (const row of rows) {
+      const sourceId = fromSql(row.source_id)
+      let asset = byId.get(row.id)
+      if (!asset) {
+        asset = { assetId: row.id, albumId: fromSql(row.album_id), duration: fromSql(row.duration), analysisAllowed: sourceId !== undefined, locations: [] }
+        byId.set(row.id, asset)
+      }
+      if (sourceId === undefined) continue
+      asset.locations.push({ sourceId, path: row.path, availability: row.availability })
+      if (row.analysis_allowed === 0) asset.analysisAllowed = false
+    }
+    const assets = Array.from(byId.values(), asset => ({ ...asset, availability: availabilityOf(asset.locations.map(location => location.availability)) }))
+    return { assets, next: assets.length === limit ? assets.at(-1).assetId : undefined }
   }
 
   // What each file of a source hashed to, and the size and modification time it had then.

@@ -10,7 +10,7 @@
     "navidrome": "node scripts/fetch-navidrome.mjs",
     "build:frontend": "cd ../frontend && pnpm build --outDir ../desktop/dist --emptyOutDir",
     "build:preload": "node scripts/build-preload.mjs",
-    "test": "node --test contracts.test.js music-store.test.js history.test.js player.test.js music-folders.test.js track-paths.test.js sign-mac.test.js mac-distribution.test.js portable-linux.test.js service-lifecycle.test.js main.test.js assistant.test.js profiles.test.js catalog-contracts.test.js catalog-bridge.test.js tool-contracts.test.js tool-runner.test.js catalog-store.test.js catalog-ingest.test.js job-queue.test.js resource-policy.test.js library-worker.test.js reconstruct.test.js reconstruct-jobs.test.js reconstruct-corpus.test.js && node --experimental-strip-types --test ../frontend/tests/*.test.ts",
+    "test": "node --test contracts.test.js music-store.test.js history.test.js player.test.js music-folders.test.js track-paths.test.js sign-mac.test.js mac-distribution.test.js portable-linux.test.js service-lifecycle.test.js main.test.js assistant.test.js profiles.test.js catalog-contracts.test.js catalog-bridge.test.js tool-contracts.test.js tool-runner.test.js catalog-store.test.js catalog-ingest.test.js job-queue.test.js resource-policy.test.js library-worker.test.js feature-store.test.js analysis.test.js estimated-traits.test.js reconstruct.test.js reconstruct-jobs.test.js reconstruct-corpus.test.js && node --experimental-strip-types --test ../frontend/tests/*.test.ts",
     "dev": "pnpm build:preload && pnpm build:frontend && electron .",
     "dev:hot": "pnpm build:preload && sh -c 'trap \"kill 0\" EXIT; (cd ../frontend && MUSIC_HMR_PORT=5183 exec pnpm exec vite --host 127.0.0.1 --port 5183 --strictPort) & MUSIC_DEV_SERVER=http://127.0.0.1:5183 electron .'",
     "prepare:build": "node scripts/prepare-build.mjs",
@@ -22,9 +22,15 @@
     "dev:app": "pnpm validate && node scripts/repo-app.mjs",
     "validate": "node ../frontend/tests/validate.mjs",
     "test:integration": "node --test tests/sharing-integration.test.mjs",
-    "dist:package": "pnpm prepare:build && pnpm navidrome && pnpm build:preload && pnpm build:frontend && electron-builder --config builder-config.json --linux --publish never && pnpm pack:portable",
-    "dist:mac:package": "node scripts/check-mac-distribution.mjs && pnpm navidrome && pnpm build:frontend && pnpm pack:mac:dir && pnpm pack:mac && pnpm pack:portable",
-    "dev:app:quick": "pnpm navidrome && pnpm build:preload && pnpm build:frontend && node scripts/repo-app.mjs"
+    "dist:package": "pnpm prepare:build && pnpm navidrome && pnpm ffmpeg && pnpm models --strict && pnpm build:preload && pnpm build:frontend && electron-builder --config builder-config.json --linux --publish never && pnpm pack:portable",
+    "dist:mac:package": "node scripts/check-mac-distribution.mjs && pnpm navidrome && pnpm ffmpeg && pnpm models --strict && pnpm build:frontend && pnpm pack:mac:dir && pnpm pack:mac && pnpm pack:portable",
+    "dev:app:quick": "pnpm navidrome && pnpm ffmpeg && pnpm models && pnpm build:preload && pnpm build:frontend && node scripts/repo-app.mjs",
+    "ffmpeg": "node scripts/build-ffmpeg.mjs",
+    "models": "node scripts/fetch-openl3.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
+    "onnxruntime-web": "1.20.1"
   },
   "devDependencies": {
     "@electron/osx-sign": "1.3.3",
@@ -62,6 +68,13 @@
       "musicbrainz.js",
       "embedded-tags.js",
       "tagsmith-read.js",
+      "analysis-jobs.js",
+      "analysis/*.js",
+      "feature-source.js",
+      "estimated-traits.js",
+      "feature-store.js",
+      "feature-store-worker.js",
+      "feature-database.js",
       "jobs/*.js",
       "catalog-store.js",
       "catalog-store-worker.js",
@@ -75,12 +88,33 @@
       "assistant-service.js",
       "assistant-settings.js",
       "preload.bundle.cjs",
-      "dist/**/*"
+      "dist/**/*",
+      "!node_modules/onnxruntime-web/dist/**",
+      "node_modules/onnxruntime-web/dist/ort.node.min.mjs",
+      "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs",
+      "node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm"
     ],
     "extraResources": [
       {
         "from": "bin/navidrome",
         "to": "navidrome"
+      },
+      {
+        "from": "bin/ffmpeg",
+        "to": "ffmpeg"
+      },
+      {
+        "from": "bin/ffmpeg.LGPL-2.1.txt",
+        "to": "ffmpeg.LGPL-2.1.txt"
+      },
+      {
+        "from": "models",
+        "to": "models",
+        "filter": [
+          "*.onnx",
+          "*.f32",
+          "*.json"
+        ]
       },
       {
         "from": "../shared",
@@ -94,6 +128,7 @@
           "tool-contracts.js",
           "tool-runner.js",
           "tool-support.js",
+          "source-policy.js",
           "reconstruct.js",
           "reconstruct-match.js",
           "package.json"
@@ -138,8 +173,5 @@
     }
   },
   "homepage": "https://github.com/snaha/kept",
-  "author": "Attila Gazso <agazso@gmail.com>",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^1.10.0"
-  }
+  "author": "Attila Gazso <agazso@gmail.com>"
 }

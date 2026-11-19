@@ -1,0 +1,47 @@
+name: ffmpeg
+# Builds the audio-only LGPL ffmpeg that Kept bundles, from the pinned source and the configure line in
+# shared/third-party.js, checks that it decodes, and keeps the binary with its licence text and build receipt.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['shared/third-party.js', 'desktop/scripts/build-ffmpeg.mjs', 'desktop/analysis/decode.js', '.github/workflows/ffmpeg.yml']
+  push:
+    branches: [main]
+    paths: ['shared/third-party.js', 'desktop/scripts/build-ffmpeg.mjs', '.github/workflows/ffmpeg.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: mac-arm64, runner: macos-15 }
+          - { name: linux-x64, runner: ubuntu-latest }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      # The x86 assembly of ffmpeg needs nasm.
+      - if: matrix.name == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y nasm
+      - run: node desktop/scripts/build-ffmpeg.mjs
+      - name: Check the licence and what was built
+        run: |
+          desktop/bin/ffmpeg -hide_banner -L
+          desktop/bin/ffmpeg -hide_banner -buildconf
+          desktop/bin/ffmpeg -hide_banner -decoders
+          ! desktop/bin/ffmpeg -hide_banner -buildconf | grep -E -- '--enable-(gpl|nonfree|version3)'
+      # The analyser's own decoder test, on the binary that was just built.
+      - run: node --test --test-name-pattern='ffmpeg' desktop/analysis.test.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.name }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            desktop/bin/ffmpeg
+            desktop/bin/ffmpeg.LGPL-2.1.txt
+            desktop/bin/ffmpeg.build.json

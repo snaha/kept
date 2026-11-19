@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -14,6 +15,10 @@ await mkdir(path.join(resources, 'app'), { recursive: true });
 await writeFile(path.join(resources, 'app/package.json'), JSON.stringify({ name: 'Kept', productName: 'Kept', version: pkg.version, type: 'module', main: 'entry.js' }));
 await writeFile(path.join(resources, 'app/entry.js'), `import ${JSON.stringify(path.join(root, 'main.js'))};\n`);
 await cp(path.join(root, 'bin/navidrome'), path.join(resources, 'navidrome'));
+// The analyser's decoder and model, when this checkout has them (pnpm ffmpeg, pnpm models).
+for (const [from, to] of [['bin/ffmpeg', 'ffmpeg'], ['bin/ffmpeg.LGPL-2.1.txt', 'ffmpeg.LGPL-2.1.txt'], ['models', 'models']]) {
+  if (existsSync(path.join(root, from))) await cp(path.join(root, from), path.join(resources, to), { recursive: true });
+}
 const plist = path.join(target, 'Contents/Info.plist');
 for (const [key, value] of Object.entries({ CFBundleIdentifier: 'dev.musicapp.desktop', CFBundleName: 'Kept', CFBundleDisplayName: 'Kept', CFBundleShortVersionString: pkg.version, CFBundleVersion: pkg.version })) {
   try { execFileSync('/usr/libexec/PlistBuddy', ['-c', `Set :${key} ${value}`, plist], { stdio: 'ignore' }); }
