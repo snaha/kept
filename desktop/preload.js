@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('musicCatalog', {
   activity: request => catalogCall('activity', ...(request === undefined ? [] : [request])),
   undo: request => catalogCall('undo', request),
   tool: request => catalogCall('tool', request),
+  estimatedTraits: () => catalogCall('estimated-traits'),
+  similarAlbums: request => catalogCall('similar-albums', request),
   catalogAlbums: request => catalogCall('catalog-albums', ...(request === undefined ? [] : [request])),
   catalogAlbum: request => catalogCall('catalog-album', request),
   catalogSearch: request => catalogCall('catalog-search', request),

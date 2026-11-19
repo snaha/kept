@@ -30,6 +30,9 @@ export type ReviewField = 'title' | 'artist' | 'year' | 'genre'
 export type FieldOrigin = 'user' | 'tags' | 'route'
 export type FieldReview = { field: ReviewField; value?: string | number; origin?: FieldOrigin; by?: string; locked: boolean; undoable: boolean }
 export type FieldReceipt = { applied: true } | { applied: false; reason: CommitRejection }
+type TraitEstimate = { value: number, confidence?: number }
+type EstimatedAlbums = Record<string, Partial<Record<TraitName, TraitEstimate>>>
+type SimilarAlbums = { analysed: boolean; albumIds: string[] }
 export type UndoReceipt = { status: 'undone' } | { status: 'blocked'; reason: Extract<UndoResult, { status: 'blocked' }>['reason']; blockedBy: string[] }
 export type CatalogBridge = {
   albums(): Promise<{ albums: Record<string, AlbumState> }>
@@ -40,6 +43,9 @@ export type CatalogBridge = {
   undo(request: { id: string; operations?: number[] }): Promise<UndoReceipt>
   // The deterministic tools of the catalog, called directly with no LLM configured.
   tool(request: ToolRunRequest): Promise<ToolRun>
+  // Traits Kept computed from how each analysed album sounds, by anchor ID. Never a decision: a hand-set value always wins.
+  estimatedTraits(): Promise<{ albums: EstimatedAlbums }>
+  similarAlbums(request: { albumId: string }): Promise<SimilarAlbums>
   catalogAlbums(request?: Parameters<CatalogService['listCatalogAlbums']>[0]): Promise<{ albums: CatalogAlbum[]; total: number; version: number }>
   catalogAlbum(request: { albumId: string }): Promise<{ album?: CatalogAlbumDetail; version: number }>
   catalogSearch(request: CatalogSearchQuery): Promise<CatalogSearchResult>
@@ -51,7 +57,7 @@ export type CatalogBridge = {
   consent(): Promise<ConsentRecord>
   setConsent(request: { consent: ConsentKey; value: 'granted' | 'denied' }): Promise<ConsentRecord>
 }
-export type CatalogBridgeOperation = 'albums' | 'set-trait' | 'set-favorite' | 'migrate' | 'consent' | 'set-consent' | 'activity' | 'undo' | 'tool'
+export type CatalogBridgeOperation = 'albums' | 'set-trait' | 'set-favorite' | 'migrate' | 'consent' | 'set-consent' | 'activity' | 'undo' | 'tool' | 'estimated-traits' | 'similar-albums'
   | 'catalog-albums' | 'catalog-album' | 'catalog-search' | 'playback-links' | 'album-review' | 'set-field' | 'lock-field' | 'undo-field'
 
 export const NAVIDROME_SOURCE_ID: string
@@ -66,4 +72,11 @@ export const MAX_ALBUM_PAGE: number
 export const MAX_PLAYBACK_LINKS: number
 export const MAX_YEAR: number
 export function validateCatalogBridgeRequest(method: string, args: unknown[]): unknown
-export function createCatalogBridge(service: CatalogService, options?: { now?: () => number; providerSourceId?: string; newId?: () => string; tools?: ToolRunner }): CatalogBridge
+export function createCatalogBridge(service: CatalogService, options?: {
+  now?: () => number
+  providerSourceId?: string
+  newId?: () => string
+  tools?: ToolRunner
+  estimates?: { estimate(): Promise<EstimatedAlbums> }
+  soundSimilarity?: (albumId: string) => Promise<SimilarAlbums>
+}): CatalogBridge

@@ -224,6 +224,28 @@ test('a job runs in a separate process of lower priority and its result comes ba
   assert.ok(result.priority > 0, `nice value ${result.priority}`)
 })
 
+test('a worker process with nothing to do is stopped, and the next job starts a new one', async t => {
+  const { store } = openStore(t)
+  const executors = []
+  const idleMs = 150
+  const service = createLibraryService({ store, classes: [CLASS], onError: () => {}, idleMs, fork: (file, name) => {
+    const child = nodeFork(file, name)
+    executors.push(child)
+    return child
+  } })
+  t.after(() => service.stop())
+  await service.start()
+  const echo = async subject => service.worker.waitFor((await service.worker.enqueue([{ class: 'fixture', subject, payload: { kind: 'echo', value: subject } }]))[0])
+  const first = await echo('one')
+  const second = await echo('two')
+  assert.equal(second.pid, first.pid, 'a busy process is kept')
+  await sleep(idleMs * 3)
+  assert.throws(() => process.kill(first.pid, 0), 'the idle process is gone')
+  const third = await echo('three')
+  assert.notEqual(third.pid, first.pid)
+  assert.equal(executors.length, 2)
+})
+
 test('a handler that throws fails the attempt, and a process that dies is replaced for the retry', async t => {
   const { service, store, skip } = real(t)
   await service.start()

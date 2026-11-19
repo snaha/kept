@@ -11,6 +11,8 @@
   import CollectionPlayback from './CollectionPlayback.svelte';
   import AlbumTraits from './AlbumTraits.svelte';
   import AlbumReview from './album-review.svelte';
+  import SimilarLane from './similar-lane.svelte';
+  import { closeSimilar, findSimilarAlbums, similar, similarAvailable } from './similar-albums.svelte';
   import { isVirtualCollection } from './virtual-catalog';
   import Icon from './ui/icon.svelte';
   import AlbumView from './album-view.svelte';
@@ -76,6 +78,10 @@
   }
   // Provenance, corrections and undo exist for albums of the library's own catalog, in the desktop app.
   const reviewable = $derived(tile.kind === 'album' && isVirtualCollection(tile) && typeof window.musicCatalog?.albumReview === 'function');
+  // "More like this" is offered for albums of the library's own catalog, in the desktop app.
+  const similarOffered = $derived(tile.kind === 'album' && isVirtualCollection(tile) && similarAvailable());
+  const similarShown = $derived(similarOffered && similar.albumId === tile.rawId && similar.status !== 'idle');
+  $effect(() => { const id = tile.rawId; return () => { if (similar.albumId === id) closeSimilar(); }; });
   const fmt = (s = 0) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   const total = (s: number) => { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr ${m % 60} min`; };
 </script>
@@ -90,6 +96,7 @@
           {#if actions}<div class="action-menu" id="album-actions" role="menu" aria-label="Album actions" use:keyboardScope={actionKeys}>
             <button role="menuitem" disabled={!tracks.some(track => track.available)} onclick={() => { void addCollection(tile); actions = false; }}>Add to queue</button>
             <button role="menuitem" onclick={() => { preferences = !preferences; actions = false; }}>Album preferences &amp; Dig tags</button>
+            {#if similarOffered}<button role="menuitem" onclick={() => { actions = false; menuTrigger?.focus({ preventScroll: true }); void findSimilarAlbums(tile); }}>More like this</button>{/if}
             {#if reviewable}<button role="menuitem" onclick={() => { reviewing = !reviewing; actions = false; menuTrigger?.focus({ preventScroll: true }); }}>Album details &amp; changes</button>{/if}
             {#if session.admin}<button role="menuitem" onclick={() => openOverlay('share')}>Share</button>{/if}
             <button role="menuitem" onclick={() => openOverlay('visualizer')}>Visualizer</button>
@@ -124,6 +131,7 @@
     <button class="toggle" aria-pressed={player.order === 'shuffle'} aria-label="Shuffle" title="Shuffle" onclick={() => setOrder(player.order === 'shuffle' ? 'normal' : 'shuffle', grid)}><Icon name="shuffle" size={16} /></button>
     <label class="track-search"><Icon name="search" size={16} /><input aria-label="Search tracks" placeholder={tile.kind === 'playlist' ? 'Search playlist' : 'Search album'} bind:value={query} /></label>
   </div>
+  {#if similarShown}<SimilarLane />{/if}
   <div class="track-list">
       {#if error}<p class="notice" role="alert">{error}</p>{/if}
       {#if loading && !tracks.length}<p class="notice" role="status">Loading tracks…</p>{/if}

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kept B0 blind sheet</title>
+<style>
+  :root {
+    --bg: #f6f4ef; --card: #fffdf8; --ink: #1d1b16; --muted: #6b665b; --line: #dcd6c8;
+    --accent: #b4491f; --accent-ink: #fff; --good: #2f6b3a; --chip: #ece7da;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15140f; --card: #1e1c16; --ink: #ece8dc; --muted: #9c9686; --line: #343025;
+      --accent: #e0703f; --accent-ink: #15140f; --good: #7fc08a; --chip: #2a2720;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 32px 16px 160px; }
+  h1 { font: 600 28px/1.2 ui-serif, Georgia, serif; margin: 0 0 8px; text-wrap: balance; }
+  p.lede { color: var(--muted); margin: 0 0 24px; max-width: 62ch; }
+  section.seed { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 0 0 16px; }
+  section.seed.answered { border-color: var(--muted); }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  h2 { font: 600 19px/1.3 ui-serif, Georgia, serif; margin: 2px 0 14px; }
+  .lists { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .lists { grid-template-columns: 1fr; } }
+  .list { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .list h3 { margin: 0 0 6px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; }
+  .list h3 span { color: var(--good); text-transform: none; letter-spacing: 0; font-weight: 600; }
+  ol { margin: 0; padding-left: 20px; }
+  li { padding: 2px 0; overflow-wrap: anywhere; }
+  .choice { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .choice label { border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; user-select: none; }
+  .choice input { position: absolute; opacity: 0; }
+  .choice input:checked + span { font-weight: 600; }
+  .choice label:has(input:checked) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .choice label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  footer { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); }
+  footer div { max-width: 920px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 10px 18px; background: var(--accent); color: var(--accent-ink); cursor: pointer; font-weight: 600; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.quiet { background: var(--chip); color: var(--ink); font-weight: 400; }
+  #progress { color: var(--muted); font-variant-numeric: tabular-nums; }
+  #result { display: none; background: var(--card); border: 2px solid var(--accent); border-radius: 12px; padding: 20px; margin: 0 0 24px; }
+  #result strong { font: 600 24px/1.2 ui-serif, Georgia, serif; display: block; margin-bottom: 6px; }
+  textarea { width: 100%; min-height: 64px; margin-top: 10px; font: 12px ui-monospace, Menlo, monospace; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  details { margin-top: 24px; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--line); }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Which list is the better "albums like this one"?</h1>
+  <p class="lede" id="lede"></p>
+  <div id="result" role="status"></div>
+  <div id="seeds"></div>
+  <details id="traits" hidden>
+    <summary>Estimated Dig traits per album (heuristic, not validated)</summary>
+    <div class="tablewrap"><table><thead><tr><th>Album</th><th class="n">Energy</th><th class="n">Acoustic</th><th class="n">Vocal</th></tr></thead><tbody></tbody></table></div>
+  </details>
+</main>
+<footer><div>
+  <button id="reveal" disabled>Reveal score</button>
+  <span id="progress"></span>
+  <button id="reset" class="quiet">Clear answers</button>
+</div></footer>
+<script>
+const data = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('__PAYLOAD__'), c => c.charCodeAt(0))))
+const STORE = data.store
+const [firstName, secondName] = data.names
+document.getElementById('lede').textContent = `For each seed album, two lists of five albums by other artists. ${data.lede} Pick the list you would rather be shown. If neither is better, say so. The answer key stays hidden until you reveal it.`
+const OPTIONS = [['x', 'List X'], ['y', 'List Y'], ['tie', 'No difference']]
+let answers = {}
+try { answers = JSON.parse(localStorage.getItem(STORE) || '{}') } catch {}
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(answers)) } catch {} }
+const el = (tag, props = {}, children = []) => {
+  const node = Object.assign(document.createElement(tag), props)
+  node.append(...children)
+  return node
+}
+const seeds = document.getElementById('seeds')
+data.sheet.forEach((row, index) => {
+  const list = side => {
+    // dataset is read-only as a property, so it cannot go through Object.assign in el().
+    const origin = el('span', { className: 'origin' })
+    origin.dataset.side = side
+    return el('div', { className: 'list' }, [
+      el('h3', {}, [`List ${side.toUpperCase()}`, origin]),
+      el('ol', {}, row[side].map(name => el('li', { textContent: name }))),
+    ])
+  }
+  const choice = el('div', { className: 'choice', role: 'radiogroup' }, OPTIONS.map(([value, text]) => {
+    const input = el('input', { type: 'radio', name: `seed-${index}`, value, checked: answers[index] === value })
+    input.addEventListener('change', () => {
+      answers[index] = value
+      save()
+      update()
+    })
+    return el('label', {}, [input, el('span', { textContent: text })])
+  }))
+  seeds.append(el('section', { className: 'seed', id: `seed-${index}` }, [
+    el('div', { className: 'eyebrow', textContent: `Seed ${index + 1} of ${data.sheet.length}` }),
+    el('h2', { textContent: row.seed }),
+    el('div', { className: 'lists' }, [list('x'), list('y')]),
+    choice,
+  ]))
+})
+function update() {
+  const done = data.sheet.filter((_, index) => answers[index]).length
+  data.sheet.forEach((_, index) => document.getElementById(`seed-${index}`).classList.toggle('answered', Boolean(answers[index])))
+  document.getElementById('progress').textContent = `${done} of ${data.sheet.length} answered`
+  document.getElementById('reveal').disabled = done < data.sheet.length
+}
+document.getElementById('reveal').addEventListener('click', () => {
+  const counts = { [firstName]: 0, [secondName]: 0, tie: 0 }
+  const picks = data.sheet.map((row, index) => {
+    const firstSide = atob(row.key).split('=')[1]
+    document.querySelectorAll(`#seed-${index} .origin`).forEach(node => { node.textContent = node.dataset.side === firstSide ? firstName : secondName })
+    const pick = answers[index] === 'tie' ? 'tie' : answers[index] === firstSide ? firstName : secondName
+    counts[pick]++
+    return pick
+  })
+  const passed = counts[firstName] >= data.passSeeds
+  const result = document.getElementById('result')
+  result.replaceChildren(
+    el('strong', { textContent: `${firstName[0].toUpperCase()}${firstName.slice(1)} preferred in ${counts[firstName]} of ${data.sheet.length} seeds — ${passed ? 'passes' : 'does not pass'} the bar of ${data.passSeeds}` }),
+    el('span', { textContent: `${secondName[0].toUpperCase()}${secondName.slice(1)} preferred in ${counts[secondName]}, no difference in ${counts.tie}. Copy this line back to the team:` }),
+    el('textarea', { readOnly: true, value: JSON.stringify({ [firstName]: counts[firstName], [secondName]: counts[secondName], ties: counts.tie, passed, picks }) }),
+  )
+  result.style.display = 'block'
+  document.getElementById('traits').hidden = !data.traits
+  result.scrollIntoView({ block: 'start' })
+})
+document.getElementById('reset').addEventListener('click', () => {
+  if (!confirm('Clear all answers?')) return
+  answers = {}
+  save()
+  location.reload()
+})
+document.querySelector('#traits tbody').append(...(data.traits ?? []).map(row => el('tr', {}, [
+  el('td', { textContent: row.album }), el('td', { className: 'n', textContent: row.energy }),
+  el('td', { className: 'n', textContent: row.acoustic }), el('td', { className: 'n', textContent: row.vocal }),
+])))
+update()
+</script>
+</body>
+</html>

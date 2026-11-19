@@ -4,9 +4,9 @@
 import { TRAIT_MAX, TRAIT_MIN } from './catalog-rules.js'
 import { MAX_SEARCH_LIMIT } from './catalog-projection.js'
 
-// Hybrid similarity (B0 round 2): sound similarity plus this bonus when two albums sit in
-// the same top-level folder. Tuned on proxy 1 only, which stops improving at 0.3.
-export const FOLDER_BONUS_WEIGHT = 0.3
+// The generic tools can give a bonus when two albums sit in the same top-level folder.
+// B2 sets it to 0 based on the blind comparison and both crowd references.
+export const FOLDER_BONUS_WEIGHT = 0
 // rank_tracks and build_queue blend the components a candidate has. Absent components do
 // not dilute the score: the weights are renormalised over the ones present.
 export const RANK_WEIGHTS = Object.freeze({ traits: 0.4, similarity: 0.4, novelty: 0.2 })

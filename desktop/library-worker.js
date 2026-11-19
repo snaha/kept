@@ -1,18 +1,25 @@
 import { randomUUID } from 'node:crypto'
 import { DONE_RETENTION_MS } from './job-queue.js'
+import { assertAnalysable } from '../shared/source-policy.js'
 
 // The library worker: it claims jobs from the persistent queue, hands them to an executor, keeps their
 // leases alive, and records how each one ended. It does no heavy work itself (that runs in the
 // executor's process) and its concurrency is whatever the resource policy allows right now.
 //
-// A job class is { name, process, module, maxAttempts?, commit? }:
+// A job class is { name, process, module, maxAttempts?, concurrency?, prepare?, commit?, receipt? }:
 //   process  names the executor process the class runs in. Classes with the same name share one
 //            process; give a heavy class (model inference) its own name to isolate it.
 //   module   file URL of the handler: export default async ctx => result (see library-process-child.js)
 //   prepare  optional async (job, store) -> payload, run in the main process when the job is claimed, to
 //            hand the handler what the catalog holds now instead of what it held when the job was queued.
+//   analysis true for a class that analyses audio or metadata: its payload names a sourceId, and a job whose
+//            source has analysisAllowed = false is refused when queued and again when claimed.
+//   skip     optional async (job, store) -> result | undefined, run before prepare: a result ends the job with it
+//            and the handler never runs (a job that is refused, or has nothing to do).
+//   concurrency  optional: how many jobs of the class run at once, whatever the policy allows.
 //   commit   optional async (job, result, store) run in the main process before the job is completed,
 //            to put the result where the rest of Kept reads it.
+//   receipt  optional result => what the queue keeps and waiters get, when the result itself is large.
 //
 // executorFor(processName) -> { run(job, { module, onCheckpoint }) -> Promise<result>, abort(id), setGate(snapshot), close() }
 
@@ -58,10 +65,18 @@ export class LibraryWorker {
   // Adds jobs (see enqueueJobs in job-queue.js). A job that is already queued or running is not added twice.
   async enqueue(jobs) {
     for (const job of jobs) if (!this.classes.has(job.class)) throw new Error(`Unknown job class: ${job.class}`)
+    for (const job of jobs) await this.checkPolicy(job)
     const defaults = jobs.map(job => ({ maxAttempts: this.classes.get(job.class).maxAttempts, ...job }))
     const { ids } = await this.store.enqueueJobs({ jobs: defaults, now: this.now() })
     this.wake()
     return ids
+  }
+
+  // An analysis job names its source; a source that may not be analysed never gets one.
+  async checkPolicy(job) {
+    if (!this.classes.get(job.class)?.analysis) return
+    const { sources } = await this.store.listSources()
+    assertAnalysable(sources.find(source => source.id === job.payload?.sourceId), job.class)
   }
 
   // Resolves with the result of the job, rejects if it fails for good or the signal aborts.
@@ -111,7 +126,7 @@ export class LibraryWorker {
         // Jobs claimed while idle must not all keep running once playback shrinks the allowance.
         if (snapshot.mode !== 'hold') await this.shed(snapshot.concurrency)
         const room = snapshot.concurrency - this.running.size
-        const claimed = await this.store.claimJobs({ owner: this.owner, classes: [...this.classes.keys()], limit: Math.max(0, room), leaseMs: this.leaseMs, now: this.now() })
+        const claimed = await this.claim(Math.max(0, room))
         if (this.stopped) {
           for (const job of claimed.jobs) await this.store.releaseJob({ id: job.id, owner: this.owner, now: this.now() })
           return
@@ -150,6 +165,26 @@ export class LibraryWorker {
     await this.store.releaseJob({ id: entry.job.id, owner: this.owner, now: this.now() }).catch(() => {})
   }
 
+  // A class with a concurrency of its own is claimed apart, so it never takes more than its share.
+  async claim(room) {
+    const busy = new Map()
+    for (const { job } of this.running.values()) busy.set(job.class, (busy.get(job.class) ?? 0) + 1)
+    const open = [], capped = []
+    for (const definition of this.classes.values()) (definition.concurrency === undefined ? open : capped).push(definition)
+    const request = { owner: this.owner, leaseMs: this.leaseMs, now: this.now() }
+    const claimed = await this.store.claimJobs({ ...request, classes: open.map(definition => definition.name), limit: room })
+    const jobs = [...claimed.jobs]
+    let waitMs = claimed.waitMs
+    for (const definition of capped) {
+      const limit = Math.min(room - jobs.length, definition.concurrency - (busy.get(definition.name) ?? 0))
+      const own = await this.store.claimJobs({ ...request, classes: [definition.name], limit: Math.max(0, limit) })
+      jobs.push(...own.jobs)
+      // A capped class that is busy is woken by its own job ending, not by the clock.
+      if (own.waitMs !== undefined && limit > 0) waitMs = Math.min(waitMs ?? Infinity, own.waitMs)
+    }
+    return { jobs, waitMs }
+  }
+
   async liveJobs() {
     const { counts } = await this.store.jobCounts()
     return Object.values(counts).reduce((sum, state) => sum + (state.queued ?? 0) + (state.leased ?? 0), 0)
@@ -177,21 +212,26 @@ export class LibraryWorker {
     this.running.set(job.id, entry)
     entry.lease = setInterval(() => void this.renew(entry), this.leaseMs / LEASE_RENEWALS_PER_LEASE)
     entry.lease.unref?.()
-    const executor = this.executor(definition.process)
     void (async () => {
+      const executor = this.executor(definition.process)
       try {
+        // A class that records its own refusals gets to answer first; every other job meets the policy here.
+        const skipped = await definition.skip?.(job, this.store)
+        if (skipped === undefined) await this.checkPolicy(job)
+        if (entry.lost || this.stopped) return
         const prepared = definition.prepare ? { ...job, payload: await definition.prepare(job, this.store) } : job
         if (entry.lost || this.stopped) return
-        const result = await executor.run(prepared, {
+        const result = skipped !== undefined ? skipped : await executor.run(prepared, {
           module: definition.module,
           onCheckpoint: checkpoint => { entry.checkpoints = entry.checkpoints.then(() => this.renewWith(entry, checkpoint)).catch(() => {}) },
         })
         await entry.checkpoints
         if (entry.lost || this.stopped) return
         await definition.commit?.(job, result, this.store)
-        if ((await this.store.completeJob({ id: job.id, owner: this.owner, result, now: this.now() })).ok) {
+        const kept = definition.receipt ? definition.receipt(result) : result
+        if ((await this.store.completeJob({ id: job.id, owner: this.owner, result: kept, now: this.now() })).ok) {
           this.count(job.class, 'done')
-          this.settle(job.id, 'resolve', result)
+          this.settle(job.id, 'resolve', kept)
         }
       } catch (error) {
         await entry.checkpoints

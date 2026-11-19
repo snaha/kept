@@ -141,6 +141,8 @@ export async function syncDecisions() {
     const albums = migrationAlbums();
     if (albums.length) await bridge.migrate({ decidedAt, albums });
     const states = (await bridge.albums()).albums;
+    // Computed energy is a view of the analysed sound. When it cannot be read, what is shown stays.
+    const computed = typeof bridge.estimatedTraits === 'function' ? await bridge.estimatedTraits().then(reply => reply.albums, () => undefined) : undefined;
     // A newer run, another account or an edit made meanwhile owns what is on screen.
     if (key !== storageKey || revision !== syncRevision) return;
     const show = (id: string, state: AlbumState) => {
@@ -148,6 +150,9 @@ export async function syncDecisions() {
       // An edit made meanwhile, or one still in the user's hand, owns what is on screen.
       if ((edited.get(id) ?? 0) > clock || held.has(id)) return;
       const { hand, estimated } = splitTraits(state.traits);
+      // A hand value is never replaced: the reading shows it first, and this only fills an axis that has none.
+      const energy = computed ? computed[state.albumId]?.energy : catalog.estimated[id]?.energy;
+      if (energy && hand.energy === undefined) estimated.energy = energy;
       // The spine reports a favourite as yes or no. A device "no" still overrides the server's own star.
       const favorite = state.favorite ? true : item?.favorite === false ? false : undefined;
       if (!sameTraits(item?.traits, hand) || item?.favorite !== favorite) catalog.items[id] = clean({ ...item, traits: Object.keys(hand).length ? hand : undefined, favorite });
@@ -158,7 +163,7 @@ export async function syncDecisions() {
   } catch { /* The device preferences keep serving until the next run. */ }
 }
 function scheduleSync() { clearTimeout(syncTimer); syncTimer = setTimeout(() => void syncDecisions(), SPINE_SYNC_DELAY); }
-/** Computed values never touch the saved preferences; a later phase feeds them from the analyser. */
+/** Computed values never touch the saved preferences or the user's decisions; they come from the analysed sound. */
 export function setEstimatedTraits(id: string, traits: EstimatedTraits | undefined) {
   if (traits && Object.keys(traits).length) catalog.estimated[id] = traits; else delete catalog.estimated[id];
 }

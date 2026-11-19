@@ -10,6 +10,8 @@ ordinary Wi-Fi traffic is unencrypted. See [phone sharing](../frontend/README.md
 
     pnpm install            # Electron + electron-builder
     pnpm navidrome          # downloads the navidrome binary for this platform into bin/
+    pnpm ffmpeg             # builds the audio-only LGPL ffmpeg into bin/ (a C compiler and make; about a minute)
+    pnpm models             # puts the OpenL3 sound model into models/ (KEPT_OPENL3_DIR, or python3 to export it)
     pnpm build:frontend     # builds ../frontend into dist/
     pnpm dev                # runs the app from source
     pnpm dev:hot            # same, with the frontend hot-reloading from a Vite dev server
