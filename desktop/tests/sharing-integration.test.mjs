@@ -122,7 +122,7 @@ test('real Navidrome: HTTP sharing stays restricted, retains credentials and ref
   const outfile = path.join(directory, 'sharing.mjs')
   await build({
     stdin: {
-      contents: "export { login, session } from './src/lib/api.svelte.ts'; export { shareLink } from './src/lib/sharing.svelte.ts'",
+      contents: "export { login, session } from './src/lib/api.svelte.ts'; export { shareLinks } from './src/lib/sharing.svelte.ts'",
       resolveDir: path.join(ROOT, 'frontend'), loader: 'ts',
     },
     define: { __LAN_IP__: JSON.stringify('127.0.0.1') },
@@ -134,10 +134,10 @@ test('real Navidrome: HTTP sharing stays restricted, retains credentials and ref
       })
     } }],
   })
-  const { login, session, shareLink } = await import(pathToFileURL(outfile).href)
+  const { login, session, shareLinks } = await import(pathToFileURL(outfile).href)
   await login({ url: base, username: 'admin', password: adminPassword })
   assert.equal(session.admin, true)
-  const first = new URLSearchParams(new URL(await shareLink()).hash.slice(1))
+  const first = new URLSearchParams(new URL((await shareLinks()).library).hash.slice(1))
   assert.equal(first.get('s'), base)
   assert.equal(first.get('u'), 'share')
   const password = first.get('p')
@@ -154,13 +154,13 @@ test('real Navidrome: HTTP sharing stays restricted, retains credentials and ref
   }
   let user = (await native('/user')).find(user => user.userName === 'share')
   assert.equal(user.isAdmin, false)
-  const second = new URLSearchParams(new URL(await shareLink()).hash.slice(1))
+  const second = new URLSearchParams(new URL((await shareLinks()).library).hash.slice(1))
   assert.equal(second.get('p'), password)
   await login({ url: base, username: 'share', password })
   assert.equal(session.admin, false, 'shared credentials log in with a restricted role')
   await login({ url: base, username: 'admin', password: adminPassword })
   await native(`/user/${user.id}`, 'PUT', { ...user, isAdmin: true })
-  await assert.rejects(shareLink(), /is an administrator/)
+  await assert.rejects(shareLinks(), /is an administrator/)
   user = (await native('/user')).find(user => user.userName === 'share')
   assert.equal(user.isAdmin, true)
   await login({ url: base, username: 'share', password })

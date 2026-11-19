@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsonicAPI } from 'subsonic-api'
 import { session } from './api.svelte'
-import { shareLink } from './sharing.svelte'
+import { shareLinks } from './sharing.svelte'
 import { currentPageUrl } from './connection-security'
 import { cleanup, render } from 'vitest-browser-svelte'
 import Share from './Share.svelte'
@@ -58,13 +58,13 @@ describe('sharing account authority', () => {
     it(`rejects an existing administrator before mutation or export (cached=${cached})`, async () => {
       users = [{ ...USER, isAdmin: true }]
       if (cached) localStorage.setItem(key(), 'cached-password')
-      await expect(shareLink()).rejects.toThrow('is an administrator')
+      await expect(shareLinks()).rejects.toThrow('is an administrator')
       expect(requests).toHaveLength(1)
       expect(requests[0]?.init.method).toBeUndefined()
     })
   }
   it('creates a restricted account and exports exactly its password', async () => {
-    const link = params(await shareLink())
+    const link = params((await shareLinks()).library)
     const write = requests.at(-1)!
     expect(write.url).toBe(`${BASE}/api/user`)
     expect(write.init.method).toBe('POST')
@@ -76,7 +76,7 @@ describe('sharing account authority', () => {
   it('rekeys a restricted account without discarding its settings', async () => {
     users = [{ ...USER, id: 'id/with/slash', customSetting: 'preserve' }]
     localStorage.setItem(key(), 'scoped-password')
-    expect(params(await shareLink()).get('p')).toBe('scoped-password')
+    expect(params((await shareLinks()).library).get('p')).toBe('scoped-password')
     const write = requests.at(-1)!
     expect(write.url).toBe(`${BASE}/api/user/id%2Fwith%2Fslash`)
     expect(write.init.method).toBe('PUT')
@@ -85,18 +85,18 @@ describe('sharing account authority', () => {
   it('does not export when the server rejects an account update', async () => {
     users = [USER]
     writeStatus = HTTP_FORBIDDEN
-    await expect(shareLink()).rejects.toThrow('403')
+    await expect(shareLinks()).rejects.toThrow('403')
   })
   for (const response of [{}, [{ id: 'share-id', userName: 'share' }], [{ ...USER, isAdmin: 'false' }]]) {
     it('fails closed for a malformed account response', async () => {
       users = response
-      await expect(shareLink()).rejects.toThrow('invalid sharing account')
+      await expect(shareLinks()).rejects.toThrow('invalid sharing account')
       expect(requests).toHaveLength(1)
     })
   }
   it('rejects a non-admin caller before authentication', async () => {
     session.admin = false
-    await expect(shareLink()).rejects.toThrow('administrator')
+    await expect(shareLinks()).rejects.toThrow('administrator')
     expect(auth).not.toHaveBeenCalled()
     expect(requests).toHaveLength(0)
   })
@@ -105,7 +105,7 @@ describe('sharing account authority', () => {
 describe('sharing credential ownership', () => {
   it('ignores the legacy password and keeps server, base path and account passwords separate', async () => {
     localStorage.setItem('share.password', LEGACY_PASSWORD)
-    const initial = params(await shareLink()).get('p')
+    const initial = params((await shareLinks()).library).get('p')
     expect(initial).toBeTruthy()
     expect(initial).not.toBe(LEGACY_PASSWORD)
     for (const [base, username] of [
@@ -115,25 +115,32 @@ describe('sharing credential ownership', () => {
     ] as const) {
       session.base = base
       session.username = username
-      const password = params(await shareLink()).get('p')
+      const password = params((await shareLinks()).library).get('p')
       expect(password).not.toBe(initial)
       expect(password).not.toBe(LEGACY_PASSWORD)
       expect(JSON.parse(String(requests.at(-1)!.init.body)).password).toBe(password)
     }
     session.base = 'https://LIBRARY.example:443/music/'
     session.username = 'admin'
-    expect(params(await shareLink()).get('p')).toBe(initial)
+    expect(params((await shareLinks()).library).get('p')).toBe(initial)
   })
   it('exports the desktop LAN link without copying its profile password into browser preferences', async () => {
-    const status = vi.fn(async () => ({ url: BASE, username: 'admin', share: { password: PROFILE_PASSWORD, port: SERVER_PORT, webPort: WEB_PORT } }))
+    const controlSecret = 'fixture-control'
+    const status = vi.fn(async () => ({ url: BASE, username: 'admin', share: { password: PROFILE_PASSWORD, controlSecret, port: SERVER_PORT, webPort: WEB_PORT } }))
     vi.stubGlobal('desktop', {
       status,
       lanIp: async () => '192.0.2.10',
     })
-    const link = new URL(await shareLink())
+    const links = await shareLinks()
+    const link = new URL(links.library)
     expect(link.origin).toBe(`http://192.0.2.10:${WEB_PORT}`)
     expect(params(link.href).get('s')).toBe(`http://192.0.2.10:${SERVER_PORT}`)
     expect(params(link.href).get('p')).toBe(PROFILE_PASSWORD)
+    expect(params(link.href).has('c')).toBe(false)
+    expect(params(links.control!).get('m')).toBe('control')
+    expect(params(links.control!).get('c')).toBe(controlSecret)
+    expect(params(links.control!).get('p')).toBe(PROFILE_PASSWORD)
+    expect(String(requests.at(-1)?.init.body)).not.toContain(controlSecret)
     expect(status).toHaveBeenCalledOnce()
     expect(localStorage.length).toBe(0)
   })
@@ -142,14 +149,14 @@ describe('sharing credential ownership', () => {
       status: async () => ({ url: BASE, username: 'admin', share: { password: PROFILE_PASSWORD, port: SERVER_PORT, webPort: WEB_PORT } }),
     })
     session.base = 'https://attacker.example'
-    await expect(shareLink()).rejects.toThrow('own library')
+    await expect(shareLinks()).rejects.toThrow('own library')
     expect(auth).not.toHaveBeenCalled()
     expect(requests).toHaveLength(0)
   })
   it('stops before a write if the account changes while user lookup is pending', async () => {
     const lookup = deferred<Response>()
     vi.stubGlobal('fetch', vi.fn(() => lookup.promise))
-    const result = shareLink()
+    const result = shareLinks()
     const rejection = expect(result).rejects.toThrow('cancelled')
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce())
     session.username = 'another-admin'
@@ -160,10 +167,10 @@ describe('sharing credential ownership', () => {
   it('cancels a superseded attempt while retaining a stable password', async () => {
     const pending = deferred<{ token: string }>()
     auth.mockImplementationOnce(() => pending.promise)
-    const old = shareLink()
+    const old = shareLinks()
     const rejection = expect(old).rejects.toThrow('cancelled')
     const password = localStorage.getItem(key())
-    const next = params(await shareLink())
+    const next = params((await shareLinks()).library)
     pending.resolve({ token: 'old-token' })
     await rejection
     expect(next.get('p')).toBe(password)
@@ -173,7 +180,7 @@ describe('sharing credential ownership', () => {
     const pending = deferred<{ token: string }>()
     auth.mockImplementationOnce(() => pending.promise)
     const controller = new AbortController()
-    const result = shareLink(controller.signal)
+    const result = shareLinks(controller.signal)
     const rejection = expect(result).rejects.toThrow('cancelled')
     controller.abort()
     pending.resolve({ token: 'old-token' })
@@ -187,7 +194,7 @@ describe('home network sharing', () => {
     vi.mocked(currentPageUrl).mockReturnValue(new URL('http://192.168.1.10:8080/library/'))
     vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) })
     session.base = 'http://192.168.1.10:4533/music'
-    const link = new URL(await shareLink())
+    const link = new URL((await shareLinks()).library)
     expect(link.origin + link.pathname).toBe('http://192.168.1.10:8080/library/')
     expect(params(link.href).get('s')).toBe(session.base)
     expect(params(link.href).get('p')).toMatch(/^[a-f0-9]{32}$/)
@@ -195,7 +202,7 @@ describe('home network sharing', () => {
   it('keeps HTTPS hostnames and base paths unchanged, including localhost', async () => {
     vi.mocked(currentPageUrl).mockReturnValue(new URL('https://localhost/library/'))
     session.base = 'https://localhost/music'
-    const link = new URL(await shareLink())
+    const link = new URL((await shareLinks()).library)
     expect(link.origin + link.pathname).toBe('https://localhost/library/')
     expect(params(link.href).get('s')).toBe(session.base)
     expect(requests.every(request => new URL(request.url).protocol === 'https:')).toBe(true)

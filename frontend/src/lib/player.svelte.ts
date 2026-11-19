@@ -1,3 +1,4 @@
+import type { ControlCommand } from './control-host.svelte'
 import { randomId } from './random-id'
 import { logPlayback } from './playback-log';
 import { readPreference, writePreference } from './preferences';
@@ -8,7 +9,7 @@ import type { Track, Collection } from './music';
 import { recordHistory, saveHistory, historyTrack, type ListeningContext, type HistoryEntry } from './listening-history.svelte';
 
 export type Order = 'normal' | 'shuffle' | 'random';
-export type Grid = { count: number; key: string; find(albumId: string): number; song(n: number): Promise<Track | undefined> };
+export type Grid = { count: number; key: string; collections?: Collection[]; find(albumId: string): number; song(n: number): Promise<Track | undefined> };
 export const player = $state({
   queue: [] as Track[], index: -1, blockedIndex: -1, playing: false, pending: false,
   collectionOperations: [] as { id: string; kind: 'play' | 'add'; collectionId: string }[],
@@ -19,6 +20,9 @@ export const player = $state({
   get song() { return this.queue[this.index] as Track | undefined; },
 });
 
+// a phone in Control mode drives the player of the computer that shared the link: while `remote.send` is set, the
+// entry points below hand their request over instead of playing here, and the computer's state comes back into `player`
+export const remote: { send?: (command: ControlCommand) => void } = {};
 let audio: HTMLAudioElement, warmAudio: HTMLAudioElement;
 let playbackListeners: AbortController | undefined;
 const savedVolume = Number(readPreference('music.volume', '100'));
@@ -73,7 +77,9 @@ function metadata(track: Track) {
 }
 export function setVolume(value: number) {
   if (!Number.isFinite(value)) return;
-  player.volume = Math.max(0, Math.min(100, Math.round(value)));
+  const volume = Math.max(0, Math.min(100, Math.round(value)))
+  if (remote.send) return remote.send({ type: 'command', name: 'volume', value: volume })
+  player.volume = volume
   if (audio) audio.volume = player.volume / 100;
   writePreference('music.volume', String(player.volume));
 }
@@ -88,7 +94,7 @@ export function collectionTrackIsCurrent(collection: Pick<Collection, 'id'>, tra
   return current.playbackOriginIndex === undefined ? tracks.filter(song => song.id === track.id).length === 1 : current.playbackOriginIndex === index;
 }
 function prepareNext() {
-  if (!playbackListeners) return;
+  if (remote.send || !playbackListeners) return;
   const i = player.order === 'shuffle' ? perm[cursor + 1] : player.index + 1;
   const track = player.queue[i];
   if (track?.source === 'local') warmAudio.src = streamUrl(track.rawId);
@@ -100,6 +106,7 @@ function blocked(track: Track | undefined) {
   return false;
 }
 async function start(index: number) {
+  if (remote.send) return
   const track = player.queue[index]; if (!track) return;
   if (blocked(track)) { player.blockedIndex = index; return; }
   try { localAdapter.available(track); }
@@ -123,6 +130,7 @@ function rebuildShuffle() {
   if (player.order === 'shuffle') { perm = shuffle(player.queue.length, player.index); cursor = 0; }
 }
 export function play(queue: Track[], index = 0, operationId?: string) {
+  if (remote.send) { remote.send({ type: 'command', name: 'tracks', tracks: queue, index }); return queueVersion; }
   if (blocked(queue[Math.max(0, index)])) return -1;
   player.requestRevision++; cancelPlayOperations(operationId);
   if (!operationId) player.loadingCollectionId = '';
@@ -135,7 +143,7 @@ export function play(queue: Track[], index = 0, operationId?: string) {
   return queueVersion;
 }
 export function appendToSession(tracks: Track[], version: number) {
-  if (version !== queueVersion) return false;
+  if (remote.send || version !== queueVersion) return false;
   const offset = player.queue.length;
   const entries = tracks.map(queueEntry);
   player.queue.push(...entries);
@@ -145,9 +153,11 @@ export function appendToSession(tracks: Track[], version: number) {
   prepareNext(); return true;
 }
 export const queueSession = () => queueVersion;
-export function enqueue(tracks: Track[]) {
+export function enqueue(tracks: Track[], { revealQueue = true } = {}) {
+  if (remote.send) { remote.send({ type: 'command', name: 'queue', tracks }); return queueVersion; }
   if (player.order === 'random') { randomGrid = undefined; cancelRandomLookup(); player.order = 'normal'; }
-  appendToSession(tracks, queueVersion); player.queueOpen = true;
+  appendToSession(tracks, queueVersion);
+  if (revealQueue) player.queueOpen = true;
   return queueVersion;
 }
 function shuffleEntries() {
@@ -160,6 +170,7 @@ function reconcileShuffle(entries: (string | undefined)[], current: Track | unde
   cursor = current ? [...perm].indexOf(player.queue.indexOf(current)) : -1;
 }
 export function moveQueue(from: number, to: number) {
+  if (remote.send) return remote.send({ type: 'command', name: 'move', entryId: player.queue[from]?.queueEntryId ?? '', targetId: player.queue[to]?.queueEntryId ?? '' })
   if (from < 0 || to < 0 || from >= player.queue.length || to >= player.queue.length || from === to) return;
   const sequence = shuffleEntries();
   const current = player.song;
@@ -172,6 +183,7 @@ export function moveQueue(from: number, to: number) {
   prepareNext();
 }
 export function removeQueue(index: number) {
+  if (remote.send) return remote.send({ type: 'command', name: 'remove', entryId: player.queue[index]?.queueEntryId ?? '' })
   if (index < 0 || index >= player.queue.length) return;
   const sequence = shuffleEntries();
   const current = player.song;
@@ -193,14 +205,17 @@ export function removeQueue(index: number) {
   prepareNext();
 }
 
+function useRandomScope(grid: Grid) {
+  randomGrid = grid;
+  perm = shuffle(grid.count); cursor = -1;
+}
 export function setOrder(order: Order, source: () => Grid) {
+  if (remote.send) return remote.send({ type: 'command', name: 'order', order, collections: order === 'random' ? source().collections ?? [] : [] })
   if (order === player.order) return;
   freshHistoryContext();
   player.order = order; cancelRandomLookup();
   if (order === 'random') {
-    randomGrid = source(); // freeze the source selection for this listening session
-    perm = shuffle(randomGrid.count); cursor = -1;
-    freshHistoryContext();
+    useRandomScope(source()); // freeze the source selection for this listening session
     const current = player.song;
     player.queue = current ? [current] : []; player.index = current ? 0 : -1;
     if (!current) void nextRandom();
@@ -221,29 +236,53 @@ async function nextRandom() {
   } catch (error) { if (mine === randomDraw) fail(error); }
   finally { if (mine === randomDraw) player.randomRequesting = false; }
 }
-export function jumpRandom(source: () => Grid) {
+export function jumpRandom(source: () => Grid, { replaceScope = false } = {}) {
+  if (remote.send) return remote.send({ type: 'command', name: 'random', collections: source().collections ?? [] })
   const hadSong = !!player.song;
   if (player.order !== 'random') { setOrder('random', source); if (hadSong) void nextRandom(); }
-  else void nextRandom();
+  else {
+    if (replaceScope) {
+      cancelRandomLookup();
+      freshHistoryContext();
+      useRandomScope(source());
+      if (player.index < player.queue.length - 1) player.queue = player.queue.slice(0, player.index + 1);
+    }
+    void nextRandom();
+  }
 }
 export function replayHistory(entry: HistoryEntry) {
-  const context = entry.context;
+  const { context, index } = entry;
+  const tracks = context.queue.map(historyTrack);
+  const { order, permutation } = context;
+  if (remote.send) {
+    const sequence = order === 'shuffle' ? historyShuffle(permutation, tracks.length, index) : []
+    return remote.send({ type: 'command', name: 'history', tracks, index, order, permutation: sequence })
+  }
   logPlayback('history-selected', { entryId: entry.id, contextId: context.id, index: entry.index });
-  const queue = context.queue.map(historyTrack);
-  if (blocked(queue[entry.index])) return;
+  if (replayQueue(tracks, index, order, permutation)) player.queueTab = 'queue';
+}
+export function isQueuePermutation(value: unknown, length: number): value is number[] {
+  return Array.isArray(value) && value.length === length && new Set(value).size === length
+    && value.every(index => Number.isInteger(index) && index >= 0 && index < length);
+}
+function historyShuffle(permutation: number[], length: number, index: number) {
+  return isQueuePermutation(permutation, length) ? permutation : [...shuffle(length, index)]
+}
+export function replayQueue(queue: Track[], index: number, order: Order, permutation: number[]) {
+  if (blocked(queue[index])) return false;
   // Start the chosen occurrence, then restore the exact shuffle permutation.
   const previousOrder = player.order;
   player.order = 'normal';
-  if (play(queue, entry.index) < 0) { player.order = previousOrder; return; }
-  player.order = context.order === 'random' ? 'normal' : context.order;
+  if (play(queue, index) < 0) { player.order = previousOrder; return false; }
+  player.order = order === 'random' ? 'normal' : order;
   if (player.order === 'shuffle') {
-    const valid = context.permutation.length === queue.length && new Set(context.permutation).size === queue.length && context.permutation.every(i => Number.isInteger(i) && i >= 0 && i < queue.length);
-    perm = valid ? Uint32Array.from(context.permutation) : shuffle(queue.length, entry.index);
-    cursor = [...perm].indexOf(entry.index);
+    perm = Uint32Array.from(historyShuffle(permutation, queue.length, index))
+    cursor = perm.indexOf(index);
   }
-  player.queueTab = 'queue';
+  return true;
 }
 export function jump(index: number) {
+  if (remote.send) return remote.send({ type: 'command', name: 'jump', entryId: player.queue[index]?.queueEntryId ?? '' })
   player.requestRevision++; cancelPlayOperations(); player.loadingCollectionId = '';
   cancelRandomLookup();
   if (blocked(player.queue[index])) return;
@@ -251,6 +290,7 @@ export function jump(index: number) {
   void start(index);
 }
 export function next() {
+  if (remote.send) return remote.send({ type: 'command', name: 'next' });
   player.requestRevision++; cancelPlayOperations(); player.loadingCollectionId = '';
   if (player.order === 'random') return void nextRandom();
   const index = player.order === 'shuffle' ? perm[cursor + 1] : (player.blockedIndex >= 0 ? player.blockedIndex : player.index) + 1;
@@ -258,6 +298,7 @@ export function next() {
   else { void pause(); player.time = player.duration; }
 }
 export function prev() {
+  if (remote.send) return remote.send({ type: 'command', name: 'prev' });
   player.requestRevision++; cancelPlayOperations(); player.loadingCollectionId = '';
   cancelRandomLookup();
   if (player.time > 3) return seek(0);
@@ -265,6 +306,7 @@ export function prev() {
   else if (player.index > 0) void start(player.index - 1);
 }
 export async function pause() {
+  if (remote.send) return remote.send({ type: 'command', name: 'pause' })
   player.requestRevision++;
   player.loadingCollectionId = '';
 
@@ -273,6 +315,7 @@ export async function pause() {
   catch (error) { if (mine === intent) fail(error); }
 }
 export async function toggle() {
+  if (remote.send) return remote.send({ type: 'command', name: 'toggle' });
   if (player.loadingCollectionId && !player.pending && !player.song) { cancelCollectionLoading(); return; }
   if (player.blockedIndex >= 0) return start(player.blockedIndex);
   if (player.playing || player.pending) return pause();
@@ -283,8 +326,9 @@ export async function toggle() {
   try { await controller.resume(); if (mine === intent) { player.pending = false; player.error = ''; playing(true);  } }
   catch (error) { if (mine === intent) fail(error); }
 }
-export function cancelCollectionLoading() { player.requestRevision++; cancelPlayOperations(); player.loadingCollectionId = ''; }
+export function cancelCollectionLoading() { if (remote.send) return remote.send({ type: 'command', name: 'cancel' }); player.requestRevision++; cancelPlayOperations(); player.loadingCollectionId = ''; }
 export async function seek(fraction: number) {
+  if (remote.send) return remote.send({ type: 'command', name: 'seek', value: fraction, entryId: player.song?.queueEntryId ?? '' })
   if (!player.duration || player.pending || !Number.isFinite(fraction)) return;
   const seconds = Math.max(0, Math.min(1, fraction)) * player.duration;
   player.time = seconds;

@@ -6,7 +6,7 @@ export type DesktopProfile = { name: string; label: string; directory: string; e
 export type DesktopStatus = {
   phase: 'setup' | 'starting' | 'ready' | 'error'; error: string; warning?: string; onboarding: boolean;
   url: string; username: string; password: string; frame: boolean;
-  share?: { webPort: number; port: number; password: string };
+  share?: { webPort: number; port: number; password: string; controlSecret?: string };
   build: { dirty?: boolean; version: string; channel: string; commit: string; branch: string; builtAt: string; runUrl: string };
   profile: DesktopProfile; musicFolder: string; musicFolders: string[];
   defaultMusicFolder: string; defaultMusicFolderAvailable: boolean; source: string; canCopy: boolean;

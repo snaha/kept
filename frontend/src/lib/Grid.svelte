@@ -22,6 +22,7 @@
   import CoverFlow from './cover-flow.svelte'
   import './sleeve-finish.css'
   import DigPanel from './DigPanel.svelte';
+  import ControlSwitch from './ControlSwitch.svelte';
   import { catalog, dig, digActive, digScore, resetDig, metadata, warmColors, coverRevision } from './discovery.svelte';
   import CollectionDetails from './CollectionDetails.svelte';
   import Settings from './Settings.svelte';
@@ -276,7 +277,7 @@
     }
     const index = shown.findIndex(tile => tile.id === wantedAlbum)
     if (index >= 0) untrack(() => finishReveal(index))
-    else if (!library.loading) {
+    else if (!library.loading && !library.artistLoading) {
       wantedAlbum = ''
       revealMessage = 'The playing album is not available in this library.'
     }
@@ -300,7 +301,9 @@
   let pointerNearTop = $state(true), pointerObserved = $state(false), scrollRevealed = $state(false);
   let scrollRevealTimer: ReturnType<typeof setTimeout> | undefined;
   let leaveTimer: ReturnType<typeof setTimeout> | undefined;
-  const barShown = $derived(dig.open || toolbar.selecting || toolbar.mode !== 'library' || controlsFocused || !!rightView || overBrowse || scrollRevealed || (!touch && pointerObserved && pointerNearTop) || (!hidden && !player.topHidden && (touch || pointerNearTop)));
+  // The Share drawer owns the screen: the pointer at the top does not pull the header over it.
+  const nearTop = $derived(pointerNearTop && player.view !== 'share');
+  const barShown = $derived(dig.open || toolbar.selecting || toolbar.mode !== 'library' || controlsFocused || !!rightView || overBrowse || scrollRevealed || (!touch && pointerObserved && nearTop) || (!hidden && !player.topHidden && (touch || nearTop)));
   $effect(() => { if (!barShown) toolbar.selecting = false; });
   $effect(() => { document.documentElement.style.setProperty('--topbar', `${filterHeight}px`); });
   $effect(() => { document.documentElement.style.setProperty('--browsebar', `${barShown && !library.details ? filterHeight : 0}px`); });
@@ -362,6 +365,7 @@
         {/each}
       </div>
     </div>
+    <ControlSwitch />
     <button class="icon-button settings-trigger" aria-label="Settings" aria-pressed={player.view === 'settings'} title="Settings" onclick={() => open('settings')}><Icon name="settings" /></button>
   </div>
   {#if dig.open && !searching}<DigPanel matches={shown.length} total={sourceTiles.length} {tagged} onrandom={discover} />{/if}
@@ -446,7 +450,7 @@
   {/if}
 </div>
 
-{#if !searching && !shown.length && !library.loading}
+{#if !searching && !shown.length && !library.loading && !library.artistLoading}
   <div class="empty-library" inert={covered}>
     {#if window.desktop && !library.tiles.length && !desktop.status?.musicFolder}
       <h2>Your music starts here.</h2>
@@ -465,7 +469,7 @@
 
 
 {#if library.scan.scanning}<div class="scan">indexing… {library.scan.count} songs</div>{/if}
-{#if library.loading}<div class="library-status" role="status">Loading music…</div>{/if}
+{#if library.loading || library.artistLoading}<div class="library-status" role="status">Loading music…</div>{/if}
 {#if currentDetails}{#key currentDetails.id}<CollectionDetails tile={currentDetails} onclose={() => (library.details = undefined)} />{/key}{/if}
 {#if library.error || library.scan.error}<div class="library-status" role="alert">{library.error || library.scan.error}</div>{/if}
 

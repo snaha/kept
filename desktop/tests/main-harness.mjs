@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import { newControlSecret } from '../profiles.js'
 
 export async function until(predicate, message) {
   const deadline = Date.now() + 2000;
@@ -22,7 +23,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
     directory, trace: [], windows: [], handlers: new Map(), children: [], databases: [],
     config: { setupComplete, musicFolders: [], musicFolder: '', source: 'empty' },
     profile: { name: 'review', root: directory, directory: path.join(directory, 'profile'), existingDirectory: path.join(directory, 'normal'), existing: false, portable: true },
-    app: new EventEmitter(), migrationError, saveError: undefined,
+    app: new EventEmitter(), migrationError, saveError: undefined, newControlSecret,
   };
   state.migration = new Promise(resolve => { state.finishMigration = resolve; });
   Object.assign(state.app, {
@@ -69,6 +70,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
     profiles: `${access}
       import { existsSync, readFileSync } from 'node:fs';
       export const readJSON = (file, fallback = {}) => existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : fallback;
+      export const newControlSecret = state.newControlSecret
       export const launchProfile = () => state.profile;
       export const loadProfile = () => state.config;
       export const saveProfile = () => { if (state.saveError) { const error = state.saveError; state.saveError = undefined; throw error; } };
@@ -118,6 +120,8 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
     await build({
       entryPoints: [new URL('../main.js', import.meta.url).pathname], outfile,
       bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
+      // ws is CommonJS and requires node builtins at load; an ESM bundle has no require of its own
+      banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" },
       plugins: [{ name: 'main-fixture', setup(builder) {
         builder.onResolve({ filter: /^(electron|node:child_process|\.\/(profiles|storage-migration|music-database)\.js)$/ }, ({ path: name }) => ({ path: mapping[name], namespace: 'fixture' }));
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path: name }) => ({ contents: mocks[name], loader: 'js' }));

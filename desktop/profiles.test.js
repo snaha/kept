@@ -6,6 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { launchProfile, newProfile, copyProfile, lockProfile, readJSON, writeJSON } from './profiles.js';
 
+const LIBRARY_PORT = 4533
+const WEB_PORT = 4534
+
 test('preview, portable and fresh profiles isolate normal Kept without clearing its state', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'music-profiles-'));
   try {
@@ -44,11 +47,17 @@ test('a live profile owner prevents both a second launch and a copy', async () =
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('copy keeps source history and preferences intact and excludes transient locks/caches', async () => {
+test('copy preserves history and preferences but gives the copy its own Control secret', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'music-profile-copy-'));
   try {
     const source = { name: 'existing', directory: path.join(directory, 'source') };
     const target = { name: 'copy', directory: path.join(directory, 'profiles', 'copy') };
+    const credentialsPath = path.join('navidrome', 'credentials.json')
+    const credentials = {
+      username: 'admin', password: 'admin-fixture', sharePassword: 'library-fixture', controlSecret: 'source-control',
+      port: LIBRARY_PORT, webPort: WEB_PORT, frame: false,
+    }
+    writeJSON(path.join(source.directory, credentialsPath), credentials)
     writeJSON(path.join(source.directory, 'profile.json'), { name: 'existing', setupComplete: true, musicFolders: ['/Music', '/Archive'] });
     await mkdir(path.join(source.directory, 'Cache'));
     await writeFile(path.join(source.directory, 'Cache', 'temporary'), 'cached');
@@ -58,6 +67,11 @@ test('copy keeps source history and preferences intact and excludes transient lo
     const copied = await copyProfile(source, target, directory);
     assert.equal(copied.name, 'copy'); assert.deepEqual(copied.musicFolders, ['/Music', '/Archive']);
     assert.equal(await readFile(path.join(source.directory, 'profile.json'), 'utf8'), original);
+    const { controlSecret, ...copiedCredentials } = readJSON(path.join(target.directory, credentialsPath))
+    assert.match(controlSecret, /^[a-zA-Z0-9_-]+$/)
+    assert.notEqual(controlSecret, credentials.controlSecret)
+    assert.deepEqual({ ...copiedCredentials, controlSecret: credentials.controlSecret }, credentials)
+    assert.deepEqual(readJSON(path.join(source.directory, credentialsPath)), credentials)
     for (const name of ['music.sqlite', 'preferences.json']) {
       assert.equal(await readFile(path.join(target.directory, name), 'utf8'), await readFile(path.join(source.directory, name), 'utf8'));
     }

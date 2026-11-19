@@ -1,7 +1,10 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { cp, readdir, rm } from 'node:fs/promises';
 import { existsSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+
+const CONTROL_SECRET_BYTES = 24
+export const newControlSecret = () => randomBytes(CONTROL_SECRET_BYTES).toString('base64url')
 
 export const readJSON = (file, fallback = {}) => {
   if (!existsSync(file)) return fallback;
@@ -112,6 +115,11 @@ export async function copyProfile(source, target, defaultMusicFolder) {
       recursive: true, errorOnExist: true, force: false,
       filter: file => !['.music-profile.lock', 'SingletonLock', 'SingletonCookie', 'SingletonSocket', 'Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'Crashpad', 'cache'].includes(path.basename(file)),
     });
+    const credentialsFile = path.join(staging, 'navidrome', 'credentials.json')
+    if (existsSync(credentialsFile)) {
+      const credentials = readJSON(credentialsFile)
+      writeJSON(credentialsFile, { ...credentials, controlSecret: newControlSecret() })
+    }
     const copied = { ...loadProfile(source, defaultMusicFolder), name: target.name, label: 'Copy of Kept', copiedAt: Date.now(), createdAt: Date.now() };
     writeJSON(path.join(staging, 'profile.json'), copied);
     renameSync(staging, target.directory);

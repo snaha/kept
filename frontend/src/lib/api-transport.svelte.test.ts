@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render } from 'vitest-browser-svelte'
+import { tick } from 'svelte'
 import { login, logout, restore, session } from './api.svelte'
+import { setShareMode, startControlClient } from './control-client.svelte'
+import ControlSwitch from './ControlSwitch.svelte'
 import Login from './Login.svelte'
 
 const SERVER = 'https://library.example/music'
@@ -36,8 +39,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function fragment(url: string) {
-  const hash = new URLSearchParams({ u: CREDS.username, p: CREDS.password, s: url })
+function fragment(url: string, extra: Record<string, string> = {}) {
+  const hash = new URLSearchParams({ u: CREDS.username, p: CREDS.password, s: url, ...extra })
   history.replaceState(undefined, '', `${location.pathname}${location.search}#${hash}`)
 }
 
@@ -79,6 +82,37 @@ describe('credential destinations', () => {
 })
 
 describe('shared and saved credential restoration', () => {
+  it('allows computer control only after opening a Control link with its own secret', async () => {
+    const controlSecret = 'fixture-control'
+    localStorage.setItem('share.phone', JSON.stringify({ mode: 'control', password: CREDS.password }))
+    fragment(LAN_SERVER, { m: 'library' })
+    await restore()
+    const socket = vi.fn(() => ({ close() {} }) as WebSocket)
+    const stop = startControlClient(socket)
+    const { container } = render(ControlSwitch)
+    try {
+      setShareMode('control')
+      await tick()
+      expect(container.querySelector('[role=radio]')).toBeNull()
+      expect(socket).not.toHaveBeenCalled()
+
+      fragment(LAN_SERVER, { m: 'control', c: controlSecret })
+      await restore()
+      await tick()
+      expect(container.textContent).toContain('Computer')
+      expect(socket).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(`/control?c=${controlSecret}`))
+      expect(requests.every(request => !request.url.includes(controlSecret))).toBe(true)
+
+      fragment(LAN_SERVER)
+      await restore()
+      await tick()
+      expect(container.querySelector('[role=radio]')).toBeNull()
+      expect(session.controlSecret).toBeUndefined()
+      expect(socket).toHaveBeenCalledOnce()
+    } finally {
+      stop()
+    }
+  })
   for (const server of [LAN_SERVER, SERVER]) {
     for (const source of ['fragment', 'saved']) {
       it(`restores ${source} credentials for ${server}`, async () => {

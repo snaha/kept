@@ -1,12 +1,53 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createRequire, isBuiltin } from 'node:module'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { build } from 'esbuild'
 import { buildConfiguration } from './scripts/build-configuration.mjs'
 import { requireMacDistribution, verifyMacApp, macDownloadNotice, macNotarizationRequired } from './scripts/mac-distribution.mjs'
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 const credentials = { CSC_LINK: '/private/certificate.p12', APPLE_ID: 'builder@example.test', APPLE_APP_SPECIFIC_PASSWORD: 'test-only', APPLE_TEAM_ID: 'TEAM' }
+
+test('release packages include the main entrypoint import graph and its runtime dependencies', async () => {
+  const root = import.meta.dirname
+  const resolveBuilder = createRequire(import.meta.resolve('electron-builder')).resolve
+  const builderModule = name => import(pathToFileURL(resolveBuilder(`app-builder-lib/out/${name}`)).href)
+  const [{ getFileMatchers, getNodeModuleFileMatcher }, { PM }, { computeNodeModuleFileSets }, { metafile }] = await Promise.all([
+    builderModule('fileMatcher.js'),
+    builderModule('node-module-collector/index.js'),
+    builderModule('util/appFileCopier.js'),
+    build({ absWorkingDir: root, entryPoints: [pkg.main], bundle: true, platform: 'node', format: 'esm', packages: 'external', write: false, metafile: true }),
+  ])
+  const runtimeImports = new Set(Object.values(metafile.inputs).flatMap(input => input.imports)
+    .filter(entry => entry.external && !isBuiltin(entry.path) && entry.path !== 'electron').map(entry => entry.path))
+
+  for (const channel of ['stable', 'preview']) {
+    const config = buildConfiguration(pkg, channel, pkg.version, credentials)
+    const out = path.resolve(root, config.directories.output)
+    const macroExpander = value => value
+    for (const platform of ['mac', 'linux']) {
+      const match = getFileMatchers(config, 'files', out, { defaultSrc: root, customBuildOptions: config[platform], globalOutDir: out, macroExpander })
+      for (const input of Object.keys(metafile.inputs).filter(file => !file.startsWith('../'))) {
+        const file = path.resolve(root, input)
+        assert.ok(match.some(matcher => matcher.createFilter()(file, statSync(file))), `${channel} ${platform} ships ${input}`)
+      }
+      const info = {
+        config, appDir: root, projectDir: root, nodePackageName: pkg.name, appInfo: { type: pkg.type },
+        debugLogger: { isEnabled: false }, getPackageManager: async () => PM.TRAVERSAL, getWorkspaceRoot: async () => root,
+      }
+      const matcher = getNodeModuleFileMatcher(root, out, macroExpander, config[platform], info)
+      const moduleFiles = await computeNodeModuleFileSets({ config, info }, matcher)
+      for (const name of runtimeImports) {
+        const dependency = moduleFiles.find(fileSet => fileSet.destination === path.join(out, 'node_modules', name))
+        assert.ok(dependency?.files.includes(fileURLToPath(import.meta.resolve(name))), `${channel} ${platform} ships ${name}`)
+      }
+    }
+  }
+})
 
 test('release publication rejects a tag that differs from the packaged version', () => {
   const result = spawnSync(process.execPath, [new URL('./scripts/publish-release.mjs', import.meta.url).pathname], {
