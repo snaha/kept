@@ -24,3 +24,13 @@ navidrome/data/
 .private-music-allow
 **/fixtures/local/
 test_library/
+
+# tagsmith dependencies and dry-run state
+tagsmith/node_modules/
+tagsmith/work/
+
+# what tagsmith test runs record about a real library: its paths and tags are never committed
+tagsmith/fixtures/local/
+
+tagsmith/dist/
+desktop/tagsmith-read.js

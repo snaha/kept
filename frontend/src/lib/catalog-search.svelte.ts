@@ -2,6 +2,7 @@ import { session } from './api.svelte';
 import { library } from './library.svelte';
 import { metadata } from './discovery.svelte';
 import { localCatalog } from './local-catalog';
+import { searchCatalogSource } from './catalog-source.svelte';
 import { player } from './player.svelte';
 import { type Collection, type Track, type Source } from './music';
 
@@ -67,13 +68,13 @@ function songAlbum(track: Track, collections: Collection[]): Collection | undefi
 }
 async function localPage(mine: number, query: string, api: NonNullable<typeof session.api>) {
   const offsets = { ...localOffsets }, more = { ...localMore };
-  const result = await localCatalog.search(api, { query, albumCount: more.album ? pageSize : 0, albumOffset: offsets.album,
+  const result = await searchCatalogSource(api, { query, albumCount: more.album ? pageSize : 0, albumOffset: offsets.album,
     artistCount: more.artist ? pageSize : 0, artistOffset: offsets.artist, songCount: more.song ? pageSize : 0, songOffset: offsets.song });
   if (mine !== generation || api !== session.api) return;
-  const albums = result.collections, tracks = result.tracks;
-  const associated = tracks.map(track => songAlbum(track, albums)).filter((tile): tile is Collection => !!tile);
+  const albums = result.collections, tracks = result.tracks, owners = [...albums, ...(result.related ?? [])];
+  const associated = tracks.map(track => songAlbum(track, owners)).filter((tile): tile is Collection => !!tile);
   incoming.collections = merge(incoming.collections, [...albums, ...associated]);
-  incoming.tracks = merge(incoming.tracks, tracks.map(track => ({ ...track, playbackOrigin: songAlbum(track, albums) })));
+  incoming.tracks = merge(incoming.tracks, tracks.map(track => ({ ...track, playbackOrigin: songAlbum(track, owners) })));
   incoming.artists = merge(incoming.artists, result.artists);
   for (const key of ['album', 'artist', 'song'] as const) {
     if (more[key]) { const count = (key === 'album' ? result.collections : key === 'artist' ? result.artists : result.tracks).length; localOffsets[key] += count; localMore[key] = count === pageSize; }

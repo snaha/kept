@@ -9,6 +9,14 @@ interface Window {
     list(query: { scope: string; query?: string; offset?: number; limit?: number }): Promise<import('../../shared/contracts').HistoryPage>;
     clear(scope: string): Promise<void>;
   };
+  // The identity spine (desktop/preload.js). Absent in a browser: device preferences serve instead.
+  musicCatalog?: import('../../shared/catalog-bridge').CatalogBridge & { onChange: (callback: () => void) => () => void };
+  // Background jobs (desktop/preload.js): playback reports go to the library worker, progress comes back.
+  musicJobs?: {
+    reportPlayback(report: import('./lib/playback-activity').PlaybackReport): void;
+    status(): Promise<import('./lib/jobs.svelte').JobsStatus>;
+    onChange(callback: (status: import('./lib/jobs.svelte').JobsStatus) => void): () => void;
+  };
   desktop?: {
     status: () => Promise<DesktopStatus>;
     start: (options?: { source?: 'folder' | 'empty'; musicFolder?: string; musicFolders?: string[] }) => Promise<DesktopStatus>;

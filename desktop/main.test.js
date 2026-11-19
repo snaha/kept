@@ -44,6 +44,10 @@ test('frontend contains malformed paths and file errors without stopping the des
     assert.equal(state.stopped, undefined)
     assert.equal(state.children[0].exitCode, null)
     assert.equal(state.children[0].options.env.ND_ADDRESS, '0.0.0.0', 'the phone can reach the shared library on the home network')
+    const { env } = state.children[0].options
+    assert.equal(env.ND_ENABLEEXTERNALSERVICES, 'false', 'the bundled server never calls out')
+    for (const key of ['ND_LASTFM_ENABLED', 'ND_DEEZER_ENABLED', 'ND_LISTENBRAINZ_ENABLED', 'ND_PLUGINS_ENABLED', 'ND_ENABLEINSIGHTSCOLLECTOR']) assert.equal(env[key], 'false', key)
+    assert.doesNotMatch(`${env.ND_COVERARTPRIORITY} ${env.ND_ARTISTARTPRIORITY}`, /external/, 'no external art sources')
   } finally { await dispose() }
 })
 
@@ -116,3 +120,33 @@ test('main cleans up a partially completed start and trusted IPC rejects subfram
     await assert.rejects(status(subframe), /only in Kept/);
   } finally { await dispose(); }
 });
+
+test('the catalog opens with the profile, answers only trusted and valid requests, and closes on quit', async () => {
+  const { state, dispose } = await mainHarness()
+  const call = (operation, event, ...args) => state.handlers.get(`catalog:${operation}`)(event, ...args)
+  try {
+    const [catalog] = state.catalogs
+    assert.equal(catalog.file, path.join(state.profile.directory, 'library.sqlite'))
+    assert.deepEqual(state.trace.at(-1), ['migrate', true], 'the catalog is reachable before the storage import ends')
+    assert.deepEqual(await call('consent', state.event()), { value: { 'online-lookups': 'not-asked', acoustid: 'not-asked' } })
+    assert.deepEqual(await call('albums', state.event()), { value: { albums: {} } })
+    await assert.rejects(call('consent', state.event('https://example.com/')), /only in Kept/)
+    assert.deepEqual(await call('set-trait', state.event(), { providerAlbumId: 'album', trait: 'tempo', value: 1 }), { error: 'Invalid catalog request' })
+    assert.deepEqual(await call('set-consent', state.event(), { consent: 'online-lookups', value: 'granted' }), { value: {} })
+    const [method, request] = catalog.calls.at(-1)
+    assert.deepEqual([method, request.consent, request.value, Number.isSafeInteger(request.decidedAt)], ['setConsent', 'online-lookups', 'granted', true])
+    assert.equal(state.interruptedAfter, undefined)
+    assert.deepEqual(await call('set-consent', state.event(), { consent: 'online-lookups', value: 'denied' }), { value: {} })
+    assert.equal(state.interruptedAfter[0], 'setConsent')
+    assert.equal(state.interruptedAfter[1].value, 'denied')
+    const notifications = []
+    state.windows[0].webContents.send = channel => notifications.push(channel)
+    state.publishRepair()
+    state.publishRepair()
+    await until(() => notifications.includes('catalog:changed'), 'repairs refresh the window')
+    assert.deepEqual(notifications.filter(channel => channel === 'catalog:changed'), ['catalog:changed'])
+    assert.equal(state.handlers.has('catalog:ingestScan'), false)
+    assert.equal(catalog.closed, undefined)
+  } finally { await dispose() }
+  assert.equal(state.catalogs[0].closed, true)
+})

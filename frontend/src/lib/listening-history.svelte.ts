@@ -3,6 +3,8 @@ import { HISTORY_SCHEMA_VERSION, isListeningContext } from '../../../shared/cont
 import { readJsonPreference, writePreference } from './preferences';
 import { coverUrl, session } from './api.svelte';
 import type { Collection, Track } from './music';
+import { primePlayback } from './catalog-source.svelte';
+import { resolveTrackPlayback } from './playback-ref'
 
 import type { PlaybackOrigin, ListeningContext, HistoryEntry } from '../../../shared/contracts';
 export type { PlaybackOrigin, ListeningContext, HistoryEntry } from '../../../shared/contracts';
@@ -26,7 +28,11 @@ function storedTrack(track: Track): Track {
   return { ...rest, playbackOrigin: rest.playbackOrigin ? { ...rest.playbackOrigin, cover: rest.playbackOrigin.source === 'local' ? '' : rest.playbackOrigin.cover } : undefined, cover: track.source === 'local' ? '' : track.cover };
 }
 export function historyTrack(track: Track): Track {
-  return track.source === 'local' ? { ...track, cover: coverUrl(track.coverId || track.albumId?.replace(/^local:album:/, '') || track.rawId, 512) } : track;
+  if (track.source !== 'local') return track;
+  // A track of the library's catalog was stored with the cover ID the music server knows; its other IDs are not the server's.
+  const id = track.coverId || ((track.catalogRef?.kind ?? 'navidrome') === 'navidrome' ? track.albumId?.replace(/^local:album:/, '') || track.rawId : undefined);
+  const available = track.catalogRef?.kind === 'asset' ? resolveTrackPlayback(track) !== undefined : track.available
+  return { ...track, available, cover: id ? coverUrl(id, 512) : track.cover }
 }
 export function loadHistory() {
   const next = key();
@@ -124,6 +130,10 @@ export async function searchHistory(query = listeningHistory.query, more = false
       return { entries, total, hasMore };
     }) as { entries: HistoryEntry[]; total: number; hasMore: boolean } | undefined;
     if (!result || revision !== queryRevision || activeAccount !== account) return;
+    // Refresh the saved tracks' streams before publishing the history window.
+    const primed = await primePlayback(result.entries.flatMap(entry => entry.context.queue), () => revision === queryRevision && activeAccount === account)
+    if (revision !== queryRevision || activeAccount !== account) return;
+    if (!primed) { listeningHistory.error = 'History could not be loaded. Try again.'; return; }
     const contexts = new Map(listeningHistory.entries.map(entry => [entry.context.id, entry.context]));
     const entries = result.entries.map(entry => ({ ...entry, context: contexts.get(entry.context.id) || entry.context }));
     const existingIds = new Set(listeningHistory.entries.map(entry => entry.id));

@@ -4,6 +4,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { createBrowseView } from './browse-view.svelte';
   import { registerBrowseSource } from './browse-source';
+  import { followJobs, jobs, jobsSummary } from './jobs.svelte';
   import { readPreference, writePreference } from './preferences';
   import Icon from './ui/icon.svelte';
   import Button from './ui/button.svelte';
@@ -22,7 +23,8 @@
   import CoverFlow from './cover-flow.svelte'
   import './sleeve-finish.css'
   import DigPanel from './DigPanel.svelte';
-  import { catalog, dig, digActive, digScore, resetDig, metadata, warmColors, coverRevision } from './discovery.svelte';
+  import { hasSource } from './traits';
+  import { albumPlays, catalog, dig, digActive, digScore, resetDig, metadata, hasTraitReadings, traitReadings, warmColors, coverRevision } from './discovery.svelte';
   import CollectionDetails from './CollectionDetails.svelte';
   import Settings from './Settings.svelte';
   import { desktop } from './desktop.svelte';
@@ -110,19 +112,22 @@
   const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
   const sourceTiles = $derived(tiles.filter((t) => library.source === 'all' || t.source === library.source));
   const genres = $derived([...new Set(sourceTiles.flatMap(tile => metadata(tile).genres))].sort(collator.compare));
-  const tagged = $derived(sourceTiles.filter(tile => !!catalog.items[tile.id]?.traits).length);
+  const tagged = $derived(sourceTiles.filter(tile => hasSource(traitReadings(tile.id), 'hand')).length);
+  const estimated = $derived(sourceTiles.filter(tile => hasSource(traitReadings(tile.id), 'estimated')).length);
   const colorsReady = $derived(sourceTiles.filter(tile => tile.cover && catalog.colors[tile.id]?.colorReady && catalog.colors[tile.id]?.colorRevision === coverRevision(tile)).length);
   const artists = $derived([...new Set(sourceTiles.filter((t) => t.kind === 'album').map((t) => t.sub).filter(Boolean))].sort(collator.compare));
   const view = createBrowseView(() => ({
     tiles, source: library.source, query, artist: artistFilter, show: showFilter, favoritesOnly, coversOnly,
     sort, direction: sortDirection, randomSeed, colorOrder, digActive: digActive(),
-    metadata, score: digScore, tagged: tile => !!catalog.items[tile.id]?.traits,
-    plays: id => catalog.stats[id]?.plays || 0,
+    metadata, score: digScore, tagged: tile => hasTraitReadings(tile.id),
+    plays: albumPlays,
     key: JSON.stringify([library.mode, library.source, query, artistFilter, sort, sortDirection, sortRevision,
       randomSeed, showFilter, favoritesOnly, coversOnly, dig.moodOn, dig.mood, dig.energy, dig.familiarity, dig.acoustic, dig.vocal]),
   }));
   const shown = $derived(view.collections);
   onMount(() => registerBrowseSource(() => searching ? catalogSearch.collections : view.collections));
+  onMount(followJobs);
+  const jobsText = $derived(jobsSummary(jobs.status));
   function filterChanged() { cancelReveal(); previousBrowse = undefined; revealMessage = ''; scrollTop = 0; library.details = undefined; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
   function changeMode(mode: Mode) { artistFilter = ''; favoritesOnly = false; filterChanged(); void setMode(mode); }
   function changeSource() { artistFilter = ''; filterChanged(); }
@@ -364,7 +369,7 @@
     </div>
     <button class="icon-button settings-trigger" aria-label="Settings" aria-pressed={player.view === 'settings'} title="Settings" onclick={() => open('settings')}><Icon name="settings" /></button>
   </div>
-  {#if dig.open && !searching}<DigPanel matches={shown.length} total={sourceTiles.length} {tagged} onrandom={discover} />{/if}
+  {#if dig.open && !searching}<DigPanel matches={shown.length} total={sourceTiles.length} {tagged} {estimated} onrandom={discover} />{/if}
   {#if toolbar.mode !== 'library'}
     <div class="secondary-controls"><button class="icon-button" aria-label="Back to library" onclick={() => { toolbar.mode = 'library'; toolbar.selecting = false; }}><Icon name="back" /></button>
     {#if filtersOpen}
@@ -464,7 +469,7 @@
 {/if}
 
 
-{#if library.scan.scanning}<div class="scan">indexing… {library.scan.count} songs</div>{/if}
+{#if library.scan.scanning}<div class="scan">indexing… {library.scan.count} songs</div>{:else if jobsText}<div class="scan" role="status">{jobsText}</div>{/if}
 {#if library.loading}<div class="library-status" role="status">Loading music…</div>{/if}
 {#if currentDetails}{#key currentDetails.id}<CollectionDetails tile={currentDetails} onclose={() => (library.details = undefined)} />{/key}{/if}
 {#if library.error || library.scan.error}<div class="library-status" role="alert">{library.error || library.scan.error}</div>{/if}

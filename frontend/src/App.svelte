@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
   import { restore, session } from './lib/api.svelte';
-  import { library, MODES, pick, setMode } from './lib/library.svelte';
+  import { library, MODES, pick, setMode, tileIdOf } from './lib/library.svelte';
   import { next, player, prev, toggle } from './lib/player.svelte';
   import Bar from './lib/Bar.svelte';
   import Login from './lib/Login.svelte';
@@ -119,7 +119,7 @@
 {:else if !session.api}
   <Login />
 {:else}
-  <Grid bind:this={grid} tiles={library.tiles} onpick={pick} activeId={player.song?.albumId} hidden={idle} />
+  <Grid bind:this={grid} tiles={library.tiles} onpick={pick} activeId={tileIdOf(player.song?.albumId)} hidden={idle} />
   {#if player.shortcutsOpen}
     <aside class="hint" aria-label="Keyboard shortcuts">
       <div class="hint-title"><strong>Keyboard shortcuts</strong><button use:focusHelp onclick={() => (player.shortcutsOpen = false)} aria-label="Close keyboard shortcuts">×</button></div>

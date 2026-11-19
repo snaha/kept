@@ -4,7 +4,7 @@
   import { tick } from 'svelte';
   import { session } from './api.svelte';
   import { jumpRandom, next, prev, player, seek, setOrder, setVolume, toggle, type Order } from './player.svelte';
-  import { grid, library } from './library.svelte';
+  import { grid, library, tileIdOf } from './library.svelte';
   import Queue from './Queue.svelte';
   import { artworkPalette, fallbackPalette } from './artwork-palette';
   let palette = $state(fallbackPalette);
@@ -57,7 +57,8 @@
     const song = player.song
     if (!song) return undefined
     const origin = song.playbackOrigin
-    const existing = library.tiles.find(tile => tile.id === (origin?.id ?? song.albumId))
+    const shown = tileIdOf(origin?.id ?? song.albumId)
+    const existing = library.tiles.find(tile => tile.id === shown)
     if (existing) return existing
     if (origin) return { sub: song.artist ?? '', count: 0, available: true, ...origin }
     const prefix = 'local:album:'

@@ -5,7 +5,7 @@ import os from 'node:os';
 import { MusicDatabase } from '../../../desktop/music-database.js';
 const historyDirectory = await mkdtemp(path.join(os.tmpdir(), 'music-audit-'));
 const history = new MusicDatabase(path.join(historyDirectory, 'music.sqlite'));
-import { bootstrap } from './fixture.mjs';
+import { bootstrap, catalogStandIn } from './fixture.mjs';
 
 const root = process.env.MUSIC_AUDIT_ROOT || path.resolve(import.meta.dirname, '../../dist');
 const port = Number(process.env.MUSIC_AUDIT_PORT || 4178);
@@ -14,7 +14,7 @@ let revision = 0;
 const sampleRate = 8000, byteLength = sampleRate * 180 * 2;
 const wav = Buffer.alloc(44 + byteLength);
 wav.write('RIFF', 0); wav.writeUInt32LE(36 + byteLength, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(sampleRate, 24); wav.writeUInt32LE(sampleRate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(byteLength, 40);
-const injection = `<script>(${bootstrap.toString()})();</script>`;
+const injection = `<script>(${bootstrap.toString()})();(${catalogStandIn.toString()})();</script>`;
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   if (url.pathname.startsWith('/audit-history/') && req.method === 'POST') {

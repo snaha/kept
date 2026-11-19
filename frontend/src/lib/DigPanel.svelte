@@ -3,7 +3,8 @@
   import { dig, digActive, resetDig, choosePreset, presets } from './discovery.svelte';
   import Slider from './ui/slider.svelte';
   import Icon from './ui/icon.svelte';
-  let { matches, total, tagged, onrandom }: { matches: number; total: number; tagged: number; onrandom: () => void } = $props();
+  import TraitMarker from './trait-marker.svelte';
+  let { matches, total, tagged, estimated = 0, onrandom }: { matches: number; total: number; tagged: number; estimated?: number; onrandom: () => void } = $props();
   // The marker follows the pointer without publishing a library-wide filter change.
   let dragging = $state(false);
   let draftMood = $state(50), draftEnergy = $state(50);
@@ -82,7 +83,8 @@
         <div class="preference"><span>{left}</span><Slider type="single" min={0} max={100} step={1} value={key === 'familiarity' ? dig.familiarity : 100 - dig[key as 'acoustic' | 'vocal']} onValueChange={value => { dig[key as 'familiarity' | 'acoustic' | 'vocal'] = key === 'familiarity' ? value : 100 - value; dig.preset = ''; }} aria-label="{left} to {right}" /><span>{right}</span></div>
       {/each}
       <div class="dig-footer"><span role="status">{digActive() ? `${matches} matching` : total} {matches === 1 ? 'album' : 'albums'}</span><button onclick={() => { finishDrag(); resetDig(); }} disabled={!digActive()}><Icon name="reset" /> Reset</button></div>
-      <p>Mood and sound use your album tags ({tagged} tagged). Familiarity uses your listening history. Add tags from an album’s menu.</p>
+      {#if estimated}<p class="legend"><span><TraitMarker source="hand" /> {tagged} tagged by you</span> <span><TraitMarker source="estimated" /> {estimated} estimated</span></p>{/if}
+      <p>Mood and sound use your album tags ({tagged} tagged){estimated ? ' and estimates for the rest. Your tags always win' : ''}. Familiarity uses your listening history. Add tags from an album’s menu.</p>
     </div>
   </div>
 </section>
@@ -107,6 +109,7 @@
   .dig-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   .dig-footer button { display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 0; min-height: 32px; }
   button:disabled { opacity: .45; cursor: default; } button:focus-visible { outline: 2px solid var(--ui-text); outline-offset: 3px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ui-text); } .legend span { display: inline-flex; align-items: center; gap: 6px; }
   p { margin: 0; color: var(--ui-text-muted); max-width: 65ch; font-size: 11px; }
   @media (max-width: 700px) { section { padding: 8px 12px 12px; max-height: calc(100dvh - 170px); overflow-y: auto; } .dig-body { grid-template-columns: 1fr; gap: 16px; } .mood-map { height: 170px; } .presets button, .dig-footer button { min-height: 44px; } }
 </style>

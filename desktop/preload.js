@@ -25,3 +25,49 @@ contextBridge.exposeInMainWorld('musicHistory', {
   list: (query) => ipcRenderer.invoke('music-history:list', query),
   clear: (scope) => ipcRenderer.invoke('music-history:clear', { scope }),
 });
+
+// The identity spine: decisions and consent, the catalog the window browses, and the review of its fields.
+const catalogCall = async (operation, ...args) => {
+  const reply = await ipcRenderer.invoke(`catalog:${operation}`, ...args)
+  if (reply.error) throw new Error(reply.error)
+  return reply.value
+}
+contextBridge.exposeInMainWorld('musicCatalog', {
+  albums: () => catalogCall('albums'),
+  setTrait: request => catalogCall('set-trait', request),
+  setFavorite: request => catalogCall('set-favorite', request),
+  migrate: request => catalogCall('migrate', request),
+  consent: () => catalogCall('consent'),
+  setConsent: request => catalogCall('set-consent', request),
+  activity: request => catalogCall('activity', ...(request === undefined ? [] : [request])),
+  undo: request => catalogCall('undo', request),
+  catalogAlbums: request => catalogCall('catalog-albums', ...(request === undefined ? [] : [request])),
+  catalogAlbum: request => catalogCall('catalog-album', request),
+  catalogSearch: request => catalogCall('catalog-search', request),
+  playbackLinks: request => catalogCall('playback-links', request),
+  albumReview: request => catalogCall('album-review', request),
+  setField: request => catalogCall('set-field', request),
+  lockField: request => catalogCall('lock-field', request),
+  undoField: request => catalogCall('undo-field', request),
+  onChange: callback => {
+    const listener = () => callback()
+    ipcRenderer.on('catalog:changed', listener)
+    return () => ipcRenderer.removeListener('catalog:changed', listener)
+  },
+})
+
+// Background jobs: the window tells the library worker what the audio element is doing, so playback
+// is never starved, and shows how far the work has got.
+contextBridge.exposeInMainWorld('musicJobs', {
+  reportPlayback: report => ipcRenderer.send('jobs:playback', report),
+  status: async () => {
+    const reply = await ipcRenderer.invoke('jobs:status')
+    if (reply.error) throw new Error(reply.error)
+    return reply.value
+  },
+  onChange: callback => {
+    const listener = (_event, status) => callback(status)
+    ipcRenderer.on('jobs:changed', listener)
+    return () => ipcRenderer.removeListener('jobs:changed', listener)
+  },
+})

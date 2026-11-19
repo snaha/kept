@@ -1,5 +1,5 @@
 import { initPlayback, disposePlayback } from './player.svelte';
-import { watchScan, disposeLibrary } from './library.svelte';
+import { watchScan, watchCatalog, disposeLibrary } from './library.svelte';
 import { disposeCatalogSearch } from './catalog-search.svelte';
 import { startDiscovery } from './discovery.svelte';
 import { startBackground } from './background.svelte';
@@ -10,7 +10,7 @@ let dispose: (() => void) | undefined;
 export function startRuntime() {
   if (dispose) return dispose;
   initPlayback();
-  const subscriptions = [startPreferenceStatus(), startUiStyle(), startBackground(), startDiscovery(), watchScan()];
+  const subscriptions = [startPreferenceStatus(), startUiStyle(), startBackground(), startDiscovery(), watchScan(), watchCatalog()];
   let active = true;
   dispose = () => {
     if (!active) return; active = false;

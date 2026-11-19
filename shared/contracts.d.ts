@@ -1,4 +1,4 @@
-import type { Track, Collection } from './music';
+import type { Track, Collection, CatalogRef } from './music';
 export type PlaybackOrigin = Pick<Collection, 'id' | 'rawId' | 'source' | 'kind' | 'title' | 'cover'>;
 export type ListeningContext = { id: string; queue: Track[]; origin?: PlaybackOrigin; order: 'normal' | 'shuffle' | 'random'; permutation: number[] };
 export type HistoryEntry = { id: string; context: ListeningContext; index: number; cursor: number; playedAt: number };
@@ -15,6 +15,7 @@ export type ProfileEntry = { name: string; label: string; createdAt: number; set
 export type HistoryBatch = { version?: 1; scope: string; contexts: ListeningContext[]; entries: { id: string; contextId: string; index: number; cursor: number; playedAt: number }[]; importKey?: string };
 export type HistoryPage = { entries: HistoryEntry[]; total: number; hasMore: boolean };
 export const HISTORY_SCHEMA_VERSION: 1;
+export function isCatalogRef(value: unknown): value is CatalogRef;
 export function isStoredTrack(value: unknown): value is Track;
 export function isListeningContext(value: unknown): value is ListeningContext;
 export function validateHistoryEnvelope(method: string, args: unknown): unknown;
