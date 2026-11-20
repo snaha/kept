@@ -4,6 +4,7 @@ import { mainHarness, until } from './tests/main-harness.mjs';
 import { featuresFromArgv } from './feature-argument.js'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 
 const HTTP_OK = 200
 const HTTP_BAD_REQUEST = 400
@@ -184,4 +185,56 @@ test('the catalog opens with the profile, answers only trusted and valid request
     assert.equal(catalog.closed, undefined)
   } finally { await dispose() }
   assert.equal(state.catalogs[0].closed, true)
+})
+
+test('a paused analysis stays paused on the next launch, and only the window may change it', async () => {
+  const { state, dispose } = await mainHarness({ analysisSettings: { paused: true } })
+  const call = (operation, event, request) => state.handlers.get(`analysis:${operation}`)(event, request)
+  const settings = path.join(state.profile.directory, 'analysis.json')
+  try {
+    await until(() => state.pauses.length === 1, 'the saved choice is applied at launch')
+    assert.deepEqual(state.pauses, [true])
+    assert.deepEqual(await call('pause', state.event(), false), { value: { mode: 'idle', classes: {} } })
+    assert.deepEqual(JSON.parse(readFileSync(settings, 'utf8')), { paused: false })
+    assert.deepEqual(await call('pause', state.event(), 'yes'), { error: 'Pause takes true or false.' })
+    await assert.rejects(call('pause', state.event('https://example.com/'), true), /only in Kept/)
+    assert.deepEqual(state.pauses, [true, false], 'neither the bad value nor the stranger reached the worker')
+    assert.deepEqual(await call('restart', state.event()), { value: { tracks: 0 } })
+    assert.equal(state.restarts, 1)
+  } finally { await dispose() }
+})
+
+test('invalid analysis preferences fall back to unpaused and can be replaced', async () => {
+  for (const analysisSettings of [JSON.parse('null'), 'synthetic', false, 1, [], { paused: 'true' }]) {
+    const { state, dispose } = await mainHarness({ analysisSettings })
+    try {
+      assert.equal(state.fatal, undefined)
+      await until(() => state.pauses.length === 1, 'analysis starts with its default preference')
+      assert.deepEqual(state.pauses, [false])
+      assert.ok((await state.handlers.get('analysis:pause')(state.event(), true)).value)
+      const settings = path.join(state.profile.directory, 'analysis.json')
+      assert.deepEqual(JSON.parse(readFileSync(settings, 'utf8')), { paused: true })
+    } finally { await dispose() }
+  }
+})
+
+test('a failed pause save preserves the worker and saved choice and analysis IPC reports failures', async () => {
+  const { state, dispose } = await mainHarness({ analysisSettings: { paused: true } })
+  try {
+    const settings = path.join(state.profile.directory, 'analysis.json')
+    const event = state.event()
+    const pause = state.handlers.get('analysis:pause')
+    await until(() => state.pauses.length === 1, 'the saved choice is applied at launch')
+    state.writeError = new Error('fixture pause write failure')
+    assert.deepEqual(await pause(event, false), { error: 'fixture pause write failure' })
+    assert.deepEqual(state.pauses, [true])
+    assert.deepEqual(JSON.parse(readFileSync(settings, 'utf8')), { paused: true })
+    state.writeError = undefined
+    assert.ok((await pause(event, false)).value)
+    assert.deepEqual(state.pauses, [true, false])
+    assert.deepEqual(JSON.parse(readFileSync(settings, 'utf8')), { paused: false })
+
+    state.restartError = new Error('fixture replacement sweep failed')
+    assert.deepEqual(await state.handlers.get('analysis:restart')(event), { error: 'fixture replacement sweep failed' })
+  } finally { await dispose() }
 })

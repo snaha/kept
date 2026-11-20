@@ -4,7 +4,8 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { createBrowseView } from './browse-view.svelte';
   import { registerBrowseSource } from './browse-source';
-  import { followJobs, jobs, jobsSummary } from './jobs.svelte';
+  import { followJobs } from './jobs.svelte';
+  import JobsStatus from './jobs-status.svelte';
   import { readPreference, writePreference } from './preferences';
   import Icon from './ui/icon.svelte';
   import Button from './ui/button.svelte';
@@ -73,6 +74,7 @@
     writePreference('library.source', library.source);
   });
   let query = $state('');
+  let searchInput: HTMLInputElement
   let searchKind = $state('all');
   const searching = $derived(!!query.trim());
   const searchAccount = $derived(JSON.stringify([session.base, session.username]));
@@ -129,7 +131,6 @@
   const shown = $derived(view.collections);
   onMount(() => registerBrowseSource(() => searching ? catalogSearch.collections : view.collections));
   onMount(followJobs);
-  const jobsText = $derived(jobsSummary(jobs.status));
   function filterChanged() { cancelReveal(); previousBrowse = undefined; revealMessage = ''; scrollTop = 0; library.details = undefined; player.queueOpen = false; player.view = ''; scroller?.scrollTo({ top: 0 }); }
   function changeMode(mode: Mode) { artistFilter = ''; favoritesOnly = false; filterChanged(); void setMode(mode); }
   function changeSource() { artistFilter = ''; filterChanged(); }
@@ -348,7 +349,7 @@
 <div class="browse" inert={covered} class:hidden={!barShown} class:selecting={toolbar.selecting}
   onpointerenter={event => (overBrowse = event.pointerType === 'mouse')} onpointerleave={() => (overBrowse = false)} bind:clientHeight={filterHeight} role="region" aria-label="Library toolbar">
   <div class="compact-bar">
-    <label class="browse-search"><Icon name="search" /><input type="search" aria-label="Search library" placeholder="Search albums, songs, artists…" maxlength="500" bind:value={query} oninput={filterChanged} onkeydown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); query = ''; filterChanged(); } }} aria-keyshortcuts="/ Control+k Meta+k" autocomplete="off" spellcheck="false" /></label>
+    <label class="browse-search"><Icon name="search" /><input type="search" aria-label="Search library" placeholder="Search albums, songs, artists…" maxlength="500" bind:this={searchInput} bind:value={query} oninput={filterChanged} onkeydown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); query = ''; filterChanged(); } }} aria-keyshortcuts="/ Control+k Meta+k" autocomplete="off" spellcheck="false" /></label>
     <button class="dig-trigger" disabled={searching} title={searching ? 'Clear search to use Dig' : undefined} aria-label="Dig into your music" aria-expanded={dig.open} aria-controls="dig-controls" class:selected={dig.open || digActive()} onclick={() => { dig.open = !dig.open; toolbar.mode = 'library'; toolbar.selecting = false; }}><Icon name="dig" /><span>Dig{digActive() ? ` · ${shown.length}` : ''}</span></button>
     <div class="library-controls" role="group" aria-label="Library filters and sorting">
     {#if searching}
@@ -472,7 +473,7 @@
 {/if}
 
 
-{#if library.scan.scanning}<div class="scan">indexing… {library.scan.count} songs</div>{:else if jobsText}<div class="scan" role="status">{jobsText}</div>{/if}
+{#if library.scan.scanning}<div class="scan">Indexing… {library.scan.count} songs</div>{:else}<JobsStatus covered={covered || player.view === 'settings'} onhide={() => searchInput.focus({ preventScroll: true })} />{/if}
 {#if library.loading}<div class="library-status" role="status">Loading music…</div>{/if}
 {#if currentDetails}{#key currentDetails.id}<CollectionDetails tile={currentDetails} onclose={() => (library.details = undefined)} />{/key}{/if}
 {#if library.error || library.scan.error}<div class="library-status" role="alert">{library.error || library.scan.error}</div>{/if}

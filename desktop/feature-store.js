@@ -15,7 +15,7 @@ import { estimateEnergy } from './estimated-traits.js'
 
 export const FEATURE_SCHEMA_VERSION = 1
 export const FEATURE_METHODS = Object.freeze([
-  'registerMethod', 'putTrackFeatures', 'recordOutcome', 'pendingAssets', 'getTrackFeatures', 'getAlbumFeatures', 'listOutcomes',
+  'registerMethod', 'putTrackFeatures', 'recordOutcome', 'pendingAssets', 'assetOutcomes', 'getTrackFeatures', 'getAlbumFeatures', 'listOutcomes',
   'aggregateAlbums', 'pruneMethods', 'featureCounts', 'albumEmbeddings', 'trackEmbeddings', 'estimateAlbumEnergy', 'similarAlbums',
 ])
 // done and unreadable are facts about the audio. refused depends on a policy the user can change, so it is asked again.
@@ -134,15 +134,19 @@ export class FeatureStore {
   }
   // Of the given assets, the ones this method version still has to analyse.
   pendingAssets(request) {
+    return { assetIds: this.assetOutcomes(request).assets.filter(asset => asset.outcome === undefined).map(asset => asset.assetId) }
+  }
+  assetOutcomes(request) {
     checkKey(request)
     if (!Array.isArray(request.assetIds) || request.assetIds.length > MAX_BATCH || !request.assetIds.every(isText)) throw invalid('assets')
     const settled = FINAL_OUTCOMES.map(() => '?').join(',')
     return {
-      assetIds: request.assetIds.filter(assetId => {
-        const final = this.get(`SELECT reason FROM analysis_outcomes WHERE asset_id=? AND method=? AND method_version=? AND outcome IN (${settled})`,
+      assets: request.assetIds.map(assetId => {
+        const final = this.get(`SELECT outcome, reason FROM analysis_outcomes WHERE asset_id=? AND method=? AND method_version=? AND outcome IN (${settled})`,
           assetId, request.method, request.version, ...FINAL_OUTCOMES)
         // Older builds recorded FFmpeg's unavailable-input errors as unreadable.
-        return !final || indicatesUnavailableInput(final.reason)
+        const outcome = final?.outcome === 'unreadable' && indicatesUnavailableInput(final.reason) ? undefined : final?.outcome
+        return { assetId, outcome }
       }),
     }
   }

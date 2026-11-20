@@ -23,6 +23,7 @@ export class ProcessExecutor {
     this.file = file
     this.idleMs = idleMs
     this.pending = new Map()
+    this.execution = 0
     this.gate = undefined
     this.closed = false
   }
@@ -66,14 +67,19 @@ export class ProcessExecutor {
   run(job, { module, onCheckpoint }) {
     if (this.closed) return Promise.reject(new Error('The worker process is closed'))
     clearTimeout(this.idle)
+    // The queue can give a released job the same job ID on its next execution.
+    const id = ++this.execution
     return new Promise((resolve, reject) => {
-      this.pending.set(job.id, { resolve, reject, onCheckpoint })
-      try { this.spawn().post({ type: 'run', id: job.id, module, job: { class: job.class, subject: job.subject, payload: job.payload, checkpoint: job.checkpoint, attempts: job.attempts } }) }
-      catch (error) { this.pending.delete(job.id); reject(error) }
+      this.pending.set(id, { jobId: job.id, resolve, reject, onCheckpoint })
+      try { this.spawn().post({ type: 'run', id, module, job: { class: job.class, subject: job.subject, payload: job.payload, checkpoint: job.checkpoint, attempts: job.attempts } }) }
+      catch (error) { this.pending.delete(id); reject(error) }
     })
   }
-  abort(id) {
-    this.pending.get(id)?.reject(new Error('Aborted'))
+  abort(jobId) {
+    const execution = [...this.pending].find(([, request]) => request.jobId === jobId)
+    if (!execution) return
+    const [id, request] = execution
+    request.reject(new Error('Aborted'))
     this.pending.delete(id)
     this.child?.post({ type: 'abort', id })
     this.rest()

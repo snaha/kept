@@ -14,6 +14,7 @@ import { PLAYING_DUTY, ResourcePolicy, TRACK_START_HOLD_MS } from './resource-po
 const T0 = 5000000
 const SECOND = 1000
 const IDLE_CONCURRENCY = 2
+const CLAIM_TIMEOUT_MS = 5000
 const FIXTURE = new URL('./tests/job-fixture.js', import.meta.url).href
 const CLASS = { name: 'fixture', process: 'library', module: FIXTURE, maxAttempts: 3 }
 const playing = (isPlaying, waiting = false) => ({ kind: 'state', playing: isPlaying, waiting })
@@ -103,6 +104,32 @@ test('jobs claimed while idle are released when playing shrinks the allowance', 
   const { counts } = await h.store.jobCounts()
   assert.equal(counts.fixture.leased, 1, 'one running, the other queued again without a lost attempt')
   assert.equal(counts.fixture.queued, 2)
+})
+
+test('jobs claimed while a class is being paused go back without running or spending an attempt', { timeout: CLAIM_TIMEOUT_MS }, async t => {
+  const h = manual(t)
+  const claimed = Promise.withResolvers(), release = Promise.withResolvers()
+  const claimJobs = h.store.claimJobs
+  t.mock.method(h.store, 'claimJobs', async request => {
+    const answer = await claimJobs(request)
+    if (answer.jobs.length) {
+      claimed.resolve()
+      await release.promise
+    }
+    return answer
+  })
+  await h.worker.start()
+  const [id] = await h.worker.enqueue(jobs(1))
+  await claimed.promise
+  try { await h.worker.setClassPaused(CLASS.name, true) }
+  finally { release.resolve() }
+  const job = async () => (await h.store.getJobs({ ids: [id] })).jobs[0]
+  await until(async () => (await job()).state === 'queued' || h.runs.size > 0, 'the claim is handled')
+  assert.equal(h.runs.size, 0)
+  assert.deepEqual([(await job()).state, (await job()).attempts], ['queued', 0])
+  await h.worker.setClassPaused(CLASS.name, false)
+  await until(() => h.runs.has(id), 'the job runs after resuming')
+  assert.equal(h.runs.get(id).job.attempts, 1)
 })
 
 test('waiting on a job leaves no listener on the signal once it ends', async t => {
@@ -204,6 +231,27 @@ test('stopping hands running jobs back to the queue without costing an attempt',
   assert.deepEqual(states, [['queued', 0], ['queued', 0], ['queued', 0]])
 })
 
+test('a paused class keeps its queue, hands back running jobs without an attempt and resumes where it stopped', async t => {
+  const h = manual(t)
+  await h.worker.start()
+  const ids = await h.worker.enqueue(jobs(3))
+  await until(() => running(h).length === IDLE_CONCURRENCY, 'two jobs run')
+  await h.worker.setClassPaused('fixture', true)
+  assert.equal(h.aborted.length, IDLE_CONCURRENCY, 'the running jobs are stopped')
+  const states = (await h.store.getJobs({ ids })).jobs.map(job => [job.state, job.attempts])
+  assert.deepEqual(states, [['queued', 0], ['queued', 0], ['queued', 0]], 'all three wait, no attempt is spent')
+  assert.deepEqual((await h.worker.status()).paused, ['fixture'])
+  const started = h.runs.size
+  await h.advance(LEASE_MS)
+  assert.equal(h.runs.size, started, 'nothing is claimed while paused, whatever the clock does')
+  assert.equal(h.timers.size, 0, 'a paused queue does not keep the worker polling')
+
+  await h.worker.setClassPaused('fixture', false)
+  await until(() => running(h).length === IDLE_CONCURRENCY, 'resuming claims the queue again')
+  assert.deepEqual((await h.worker.status()).paused, [])
+  await assert.rejects(h.worker.setClassPaused('nope', true), /Unknown job class/)
+})
+
 // The same, across a real process.
 const real = (t, extra = {}) => {
   const { raw, store } = openStore(t)
@@ -254,7 +302,10 @@ test('a handler that throws fails the attempt, and a process that dies is replac
   const [died] = await service.worker.enqueue([{ class: 'fixture', subject: 'die', payload: { kind: 'die' } }])
   const outcome = service.worker.waitFor(died)
   outcome.catch(() => {})
-  await until(async () => (await store.getJobs({ ids: [died] })).jobs[0].state === 'queued', 'the death is noticed and the job queued again')
+  await until(async () => {
+    const { jobs: [job] } = await store.getJobs({ ids: [died] })
+    return job.state === 'queued' && job.attempts === 1
+  }, 'the death is noticed and the job queued again')
   skip(backoffMs(1))
   service.worker.wake()
   assert.deepEqual(await outcome, { attempts: 2 })
@@ -266,7 +317,10 @@ test('a job interrupted by a process crash resumes from its checkpoint on the re
   const [id] = await service.worker.enqueue([{ class: 'fixture', subject: 'steps', payload: { kind: 'steps', to: 10, crashAt: 6 } }])
   const outcome = service.worker.waitFor(id)
   outcome.catch(() => {})
-  await until(async () => (await store.getJobs({ ids: [id] })).jobs[0].state === 'queued', 'the crash is noticed')
+  await until(async () => {
+    const { jobs: [job] } = await store.getJobs({ ids: [id] })
+    return job.state === 'queued' && job.attempts === 1
+  }, 'the crash is noticed')
   assert.equal((await store.getJobs({ ids: [id] })).jobs[0].checkpoint.step, 6)
   skip(backoffMs(1))
   service.worker.wake()
