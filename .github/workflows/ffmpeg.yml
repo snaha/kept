@@ -1,0 +1,57 @@
+name: ffmpeg
+# Builds the audio-only LGPL ffmpeg that Kept bundles, from the pinned source and the configure line in
+# shared/third-party.js, checks that it decodes, and keeps the binary with its licence text and build receipt.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['shared/third-party.js', 'desktop/scripts/build-ffmpeg.mjs', 'desktop/analysis/decode.js', 'desktop/analysis.test.js', '.github/workflows/ffmpeg.yml']
+  push:
+    branches: [main]
+    paths: ['shared/third-party.js', 'desktop/scripts/build-ffmpeg.mjs', '.github/workflows/ffmpeg.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: mac-arm64, runner: macos-15 }
+          - { name: linux-x64, runner: ubuntu-latest }
+          - { name: linux-arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11.5.1 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm, cache-dependency-path: 'desktop/pnpm-lock.yaml' }
+      # The x86 assembly of ffmpeg needs nasm.
+      - if: matrix.name == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y nasm
+      - run: node desktop/scripts/build-ffmpeg.mjs
+      - name: Check the licence and what was built
+        run: |
+          desktop/bin/ffmpeg -hide_banner -L
+          desktop/bin/ffmpeg -hide_banner -buildconf
+          desktop/bin/ffmpeg -hide_banner -decoders
+          ! desktop/bin/ffmpeg -hide_banner -buildconf | grep -E -- '--enable-(gpl|nonfree|version3)'
+      # The analyser's decoder tests use the binary that was just built and import the model runtime.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: desktop
+      - name: Run bundled FFmpeg decoder tests
+        shell: bash
+        run: |
+          results="$RUNNER_TEMP/ffmpeg-tests.tap"
+          node --test --test-reporter=tap --test-name-pattern='ffmpeg|file that disappears after preparation|error-like title' desktop/analysis.test.js | tee "$results"
+          grep -qE '^ok [0-9]+ - a file that disappears after preparation is analysed on the next sweep after it returns$' "$results"
+          grep -qE '^ok [0-9]+ - a track with an unknown duration and an error-like title saves features through the queue$' "$results"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.name }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            desktop/bin/ffmpeg
+            desktop/bin/ffmpeg.LGPL-2.1.txt
+            desktop/bin/ffmpeg.build.json

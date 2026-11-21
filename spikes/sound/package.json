@@ -1,0 +1,20 @@
+{
+  "name": "kept-sound-spike",
+  "private": true,
+  "type": "module",
+  "description": "B0 offline sound spike: DSP features and OpenL3 embeddings on a real collection",
+  "scripts": {
+    "analyse": "node src/analyse.js",
+    "evaluate": "node src/evaluate.js",
+    "mood": "node src/mood.js",
+    "parity": "node src/parity.js",
+    "crowd-fetch": "node src/crowd-fetch.js",
+    "crowd-lastfm": "node src/crowd-lastfm.js",
+    "crowd-eval": "node src/crowd-eval.js",
+    "dig-traits": "node src/read-dig-traits.js"
+  },
+  "dependencies": {
+    "onnxruntime-web": "1.20.1",
+    "classic-level": "3.0.0"
+  }
+}

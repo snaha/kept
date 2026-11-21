@@ -9,7 +9,9 @@
   import { assistantAvailable } from './assistant.svelte';
   import { consent, setLookupConsent } from './consent.svelte';
   import ActivityPanel from './activity-panel.svelte';
-  import { activity, loadActivity, loadOlderActivity, undoActivity } from './activity.svelte'
+  import { activity, loadActivity, loadOlderActivity, undoActivity } from './activity.svelte';
+  import ThirdPartyNotices from './third-party-notices.svelte';
+  import { THIRD_PARTY_NOTICES } from './third-party';
   import { desktop } from './desktop.svelte';
   import { session } from './api.svelte';
   import { catalogSource, setCatalogEnabled, type CatalogFallback } from './catalog-source.svelte';
@@ -27,7 +29,8 @@
     { id: 'appearance', label: 'Appearance' },
     { id: 'advanced', label: 'Advanced' },
     // The change ledger lives in the desktop library, so there is nothing to list in a browser.
-    ...(window.musicCatalog ? [{ id: 'activity', label: 'Activity' }] : [])
+    ...(window.musicCatalog ? [{ id: 'activity', label: 'Activity' }] : []),
+    { id: 'notices', label: 'Licences' }
   ];
   // The library's own catalog exists in the desktop app. Turning it on or off loads the library again, as the user asked.
   const catalogOffered = typeof window.musicCatalog?.catalogAlbums === 'function';
@@ -174,6 +177,8 @@
             </Button>
           </div>
         {/if}
+      {:else if activeTab === 'notices'}
+        <ThirdPartyNotices notices={THIRD_PARTY_NOTICES} />
       {:else}
         <section class="advanced" aria-labelledby="advanced-title">
           <h2 id="advanced-title">Advanced &amp; network</h2>
@@ -270,8 +275,8 @@
   @media (max-width: 600px) {
     .settings-dialog { width: calc(100vw - 20px); height: min(640px, calc(100dvh - 20px)); }
     .header { padding: 16px 18px 12px; }
-    .tabs { padding: 0 18px; }
-    .tabs button { flex: 1; padding: 0 8px; }
+    .tabs { gap: 2px; padding: 0 12px; }
+    .tabs button { flex: 1; padding: 0 6px; }
     .panel-body { padding: 14px 6px 20px; }
     .content :global([data-slot="button"]), .text-input { min-height: 44px; }
     .content :global(.library-select-field input), .content :global(.library-select-field button) { min-height: 44px; }

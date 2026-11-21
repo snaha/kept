@@ -103,3 +103,9 @@ export async function tracksByOccurrence(entries: { occurrenceId: string; albumI
   const byId = new Map(albums.flat().map(track => [track.id, track]))
   return entries.flatMap(entry => { const track = byId.get(virtualTrackId(entry.occurrenceId)); return track ? [track] : [] })
 }
+
+/** The albums of the library's own catalog for IDs the tools returned, in the order given. An album that is gone is left out. */
+export async function albumsById(albumIds: string[]): Promise<Collection[]> {
+  const found = await Promise.all(albumIds.map(async albumId => (await client().catalogAlbum({ albumId })).album))
+  return found.flatMap(detail => { if (!detail) return []; const { tracks: _tracks, ...summary } = detail; return [virtual.album(summary)] })
+}

@@ -191,14 +191,15 @@ test('build_queue loads enough albums when the best ones hold many tracks', asyn
   assert.equal(result.output.occurrenceIds.length, ALBUM_COUNT, 'one track of every album, not a short queue from the first few')
 })
 
-test('find_similar ranks albums by sound plus the folder bonus and leaves out the seed artist', async () => {
+test('find_similar is sound only: the folder bonus is 0, so a closer sound beats the same folder', async () => {
   const world = await setup()
+  assert.equal(FOLDER_BONUS_WEIGHT, 0)
   const { output } = await world.runner.run('find_similar', { seed: album(world.ids.blue) })
-  // rockclose: cosine 0.8 and the same folder; jazzclose: cosine 0.9 and another folder.
-  assert.deepEqual(names(world, output.results), ['rockclose', 'jazzclose', ...tiedOrder(world), 'far'])
+  // jazzclose: cosine 0.9, another folder; rockclose: cosine 0.8 and the seed's folder.
+  assert.deepEqual(names(world, output.results), ['jazzclose', 'rockclose', ...tiedOrder(world), 'far'])
   assert.ok(output.results.every(item => item.basis === 'sound'))
-  assert.ok(Math.abs(output.results[0].score - hybridScore(0.8, true)) < 1e-6)
-  assert.ok(output.results[0].score > output.results[1].score, `the ${FOLDER_BONUS_WEIGHT} folder bonus lifts the nearer folder over a closer sound`)
+  assert.ok(Math.abs(output.results[0].score - 0.9) < 1e-3)
+  assert.equal(hybridScore(0.8, true), hybridScore(0.8, false))
   const withArtist = await world.runner.run('find_similar', { seed: album(world.ids.blue), excludeSeedArtist: false })
   assert.equal(names(world, withArtist.output.results)[0], 'blue2')
   assert.ok(!names(world, withArtist.output.results).includes('blue'), 'never the seed itself')
@@ -224,7 +225,7 @@ test('find_similar novelty prefers what the user has not played, and 0 what they
   const familiar = await runner.run('find_similar', { seed: album(world.ids.blue), novelty: 0 })
   assert.equal(names(world, familiar.output.results)[0], 'rockclose')
   const plain = await runner.run('find_similar', { seed: album(world.ids.blue) })
-  assert.equal(names(world, plain.output.results)[0], 'rockclose', 'without a novelty the history is not used')
+  assert.equal(names(world, plain.output.results)[0], 'jazzclose', 'without a novelty the history is not used')
 })
 
 test('find_similar without features falls back to traits, then to the folder, and says so', async () => {
@@ -252,7 +253,7 @@ test('find_similar can answer with tracks, from a track seed', async () => {
   assert.ok(!output.results.some(item => item.ref.id === seed.id))
   const owners = new Set(output.results.map(item => world.keyOf[Object.keys(world.keyOf).find(id => world.assets[world.keyOf[id]].some(entry => entry.id === item.ref.id))]))
   assert.ok(!owners.has('blue') && !owners.has('blue2'))
-  assert.equal([...owners][0], 'rockclose')
+  assert.equal([...owners][0], 'jazzclose', 'the closer sound leads, whatever the folder')
 })
 
 test('rank_tracks orders by trait fit, similarity and novelty, keeping the caller order on ties', async () => {
@@ -444,13 +445,13 @@ test('rank_tracks uses plays persisted under legacy and virtual album IDs', asyn
   assert.deepEqual(output.ranked.map(item => item.occurrenceId), [...occurrenceIds].reverse())
 })
 
-test('the tools run on the SQLite catalog the same way, folder bonus included', async t => {
+test('the tools run on the SQLite catalog the same way, sound only', async t => {
   const directory = mkdtempSync(path.join(os.tmpdir(), 'kept-tools-'))
   const database = new CatalogDatabase(path.join(directory, 'library.sqlite'))
   t.after(async () => { await database.close(); rmSync(directory, { recursive: true, force: true }) })
   const world = await setup({ catalog: database.service })
   const { output } = await world.runner.run('find_similar', { seed: album(world.ids.blue) })
-  assert.deepEqual(names(world, output.results), ['rockclose', 'jazzclose', ...tiedOrder(world), 'far'])
+  assert.deepEqual(names(world, output.results), ['jazzclose', 'rockclose', ...tiedOrder(world), 'far'])
   const search = await world.runner.run('search_catalog', { query: 'jazz', kinds: ['album'] })
   assert.deepEqual(names(world, search.output.results), ['jazzclose'])
   const queue = await world.runner.run('build_queue', { seeds: [album(world.ids.blue)], length: 6 })

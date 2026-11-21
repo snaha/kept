@@ -34,7 +34,7 @@ afterEach(() => { cleanup(); delete window.musicCatalog; resetActivity() })
 describe('Activity in Settings', () => {
   it('has no tab where there is no library to list', async () => {
     render(Settings, { coversOnly: false, motion: true, onclose: () => {} }); await tick()
-    expect([...document.querySelectorAll('[role=tab]')].map(tab => tab.textContent)).toEqual(['Appearance', 'Advanced'])
+    expect([...document.querySelectorAll('[role=tab]')].map(tab => tab.textContent)).toEqual(['Appearance', 'Advanced', 'Licences'])
   })
 
   it('lists a trait edit as a receipt, undoes it and keeps focus in the dialog', async () => {

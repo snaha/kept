@@ -84,7 +84,7 @@
       {/each}
       <div class="dig-footer"><span role="status">{digActive() ? `${matches} matching` : total} {matches === 1 ? 'album' : 'albums'}</span><button onclick={() => { finishDrag(); resetDig(); }} disabled={!digActive()}><Icon name="reset" /> Reset</button></div>
       {#if estimated}<p class="legend"><span><TraitMarker source="hand" /> {tagged} tagged by you</span> <span><TraitMarker source="estimated" /> {estimated} estimated</span></p>{/if}
-      <p>Mood and sound use your album tags ({tagged} tagged){estimated ? ' and estimates for the rest. Your tags always win' : ''}. Familiarity uses your listening history. Add tags from an album’s menu.</p>
+      <p>Mood and sound use your album tags ({tagged} tagged){estimated ? ' and Kept’s estimate of energy for the rest. Your tags always win' : ''}. Familiarity uses your listening history. Add tags from an album’s menu.</p>
     </div>
   </div>
 </section>

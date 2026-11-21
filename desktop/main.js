@@ -24,6 +24,12 @@ import { createAssistantSettings } from './assistant-settings.js'
 import { CatalogDatabase } from './catalog-database.js'
 import { markUnavailableSources, startCatalogSync } from './catalog-ingest.js'
 import { createTrackPathResolver } from './track-paths.js'
+import { createAnalysis } from './analysis-jobs.js'
+import { resolveFfmpeg, resolveModelDir } from './analysis/ffmpeg.js'
+import { FeatureDatabase } from './feature-database.js'
+import { createFeatureSource, createSoundSimilarity } from './feature-source.js'
+import { createEstimatedTraits } from './estimated-traits.js'
+import { currentMethod } from './analysis/methods.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, 'dist');
@@ -155,6 +161,8 @@ let musicDatabase;
 let catalogDatabase, catalogBridge, catalogSync, library
 const CATALOG_CHANGE_DELAY_MS = 200
 let catalogChangeTimer
+// features.sqlite holds what the analyser computed. It can be deleted: the library is then analysed again.
+let featureDatabase
 
 // Job handlers run in a utility process of their own, so the window and the catalog never share a core with heavy work.
 const electronFork = (file, name) => {
@@ -208,14 +216,22 @@ app.whenReady().then(async () => {
   if (profileMusicFolders(config).some(folder => !existsSync(folder))) { config.setupComplete = false; startupError = 'A music folder is unavailable. Reconnect its drive or remove it before opening your library.'; }
   phase = config.setupComplete ? 'starting' : 'setup';
   catalogDatabase = new CatalogDatabase(path.join(profile.directory, 'library.sqlite'))
-  // Tools read the history of the signed-in account; the feature store joins when B1 provides it.
+  featureDatabase = new FeatureDatabase(path.join(profile.directory, 'features.sqlite'))
+  const method = currentMethod()
+  const features = createFeatureSource({ features: featureDatabase.store, method })
+  // Tools read the history of the signed-in account and the sound features the analyser has stored.
   const toolRunner = createToolRunner({
     catalog: catalogDatabase.service,
+    features,
     history: createHistoryStats({
       stats: async () => (musicDatabase && st ? musicDatabase.call('stats', { scope: `desktop:${st.username}` }) : {}),
     }),
   })
-  catalogBridge = createCatalogBridge(catalogDatabase.service, { tools: toolRunner })
+  catalogBridge = createCatalogBridge(catalogDatabase.service, {
+    tools: toolRunner,
+    estimates: createEstimatedTraits({ features: featureDatabase.store, method }),
+    soundSimilarity: createSoundSimilarity({ catalog: catalogDatabase.service, features: featureDatabase.store, method }),
+  })
   // An unplugged drive keeps its albums and tags: they are shown as unavailable, never dropped.
   void markUnavailableSources({ catalog: catalogDatabase.service, folders: profileMusicFolders(config) }).catch(error => console.error('Kept catalog:', error.message))
   for (const [operation, method] of Object.entries(CATALOG_BRIDGE_METHODS)) ipcMain.handle(`catalog:${operation}`, async (event, ...args) => {
@@ -237,13 +253,23 @@ app.whenReady().then(async () => {
   // Measuring the policy against its absence: KEPT_JOBS_POLICY=off lets background work run at full tilt.
   const policy = new ResourcePolicy()
   policy.enabled = process.env.KEPT_JOBS_POLICY !== 'off'
+  // Sound analysis: its own low-priority process, the bundled decoder and a model that never leaves this computer.
+  // KEPT_ANALYSIS=off leaves it out, to measure the app without it.
+  const locations = { packaged: app.isPackaged, resources: process.resourcesPath, desktop: here }
+  const analysis = process.env.KEPT_ANALYSIS === 'off' ? undefined : createAnalysis({
+    catalog: catalogDatabase.store, features: featureDatabase.store, folders: () => profileMusicFolders(config),
+    ffmpeg: resolveFfmpeg(locations)?.file, modelDir: resolveModelDir(locations),
+    onError: error => console.error('Kept analysis:', error.message),
+  })
+  if (analysis?.missing) console.error(`Kept analysis: off, ${analysis.missing}`)
   library = createLibraryService({
-    store: catalogDatabase.store, fork: electronFork, policy, appVersion: app.getVersion(),
+    store: catalogDatabase.store, fork: electronFork, policy, appVersion: app.getVersion(), analysis,
     onProgress: status => sendToWindows('jobs:changed', status),
     onCatalogChange: broadcastRepairs,
     onError: error => console.error('Kept jobs:', error.message),
   })
-  void library.start().catch(error => console.error('Kept jobs:', error.message))
+  // What earlier launches left unanalysed is queued again at once; a finished scan queues what is new.
+  void library.start().then(() => library.analyse()).catch(error => console.error('Kept jobs:', error.message))
   ipcMain.on('jobs:playback', (event, report) => {
     try { trusted(event); library.reportPlayback(report) } catch (error) { console.error('Kept jobs:', error.message) }
   })
@@ -422,6 +448,8 @@ app.whenReady().then(async () => {
         for (const win of BrowserWindow.getAllWindows()) win.webContents.send('catalog:changed')
         // A finished scan: albums that are new or changed go through the reconstruction ladder.
         if (result) void queueReconstruction()
+        // A finished scan: the assets it found are queued for analysis.
+        if (result) void library.analyse()
       },
       onError: error => console.error('Kept catalog:', error.message),
     })
@@ -480,6 +508,7 @@ app.on('before-quit', event => {
   void (async () => {
     await stopServices();
     await library?.stop().catch(error => console.error('Kept cleanup:', error))
+    await featureDatabase?.close().catch(error => console.error('Kept cleanup:', error))
     await catalogDatabase?.close().catch(error => console.error('Kept cleanup:', error))
     if (app.isReady() && hasInstanceLock) electronSession.defaultSession.flushStorageData();
   })().finally(() => { shutdownComplete = true; app.quit(); });

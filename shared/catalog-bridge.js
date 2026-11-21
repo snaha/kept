@@ -9,7 +9,8 @@ export const NAVIDROME_SOURCE_ID = 'navidrome'
 // IPC operation name -> bridge method.
 export const CATALOG_BRIDGE_METHODS = Object.freeze({
   albums: 'albums', 'set-trait': 'setTrait', 'set-favorite': 'setFavorite', migrate: 'migrate', consent: 'consent', 'set-consent': 'setConsent',
-  activity: 'activity', undo: 'undo', tool: 'tool',
+  activity: 'activity', undo: 'undo', tool: 'tool', 'estimated-traits': 'estimatedTraits',
+  'similar-albums': 'similarAlbums',
   'catalog-albums': 'catalogAlbums', 'catalog-album': 'catalogAlbum', 'catalog-search': 'catalogSearch', 'playback-links': 'playbackLinks',
   'album-review': 'albumReview', 'set-field': 'setField', 'lock-field': 'lockField', 'undo-field': 'undoField',
 })
@@ -56,13 +57,14 @@ export function validateCatalogBridgeRequest(method, args) {
   const [request] = args
   const fail = () => { throw new Error('Invalid catalog request') }
   if (!Object.hasOwn(CATALOG_BRIDGE_METHODS, method)) throw new Error('Unknown catalog operation')
-  if (method === 'albums' || method === 'consent') return request === undefined ? undefined : fail()
+  if (method === 'albums' || method === 'consent' || method === 'estimated-traits') return request === undefined ? undefined : fail()
   if ((method === 'activity' || method === 'catalog-albums') && request === undefined) return undefined
   if (!isObject(request)) fail()
   if (method === 'catalog-albums' && !((request.offset === undefined || isCount(request.offset)) && (request.limit === undefined || isLimit(request.limit, MAX_ALBUM_PAGE))
     && (request.sort === undefined || typeof request.sort === 'string')
     && (request.artist === undefined || (typeof request.artist === 'string' && request.artist.trim() && request.artist.length <= MAX_TAG_LENGTH)))) fail()
   if (['catalog-album', 'album-review', 'set-field', 'lock-field', 'undo-field'].includes(method) && !isCatalogId(request.albumId)) fail()
+  if (method === 'similar-albums' && (!isCatalogId(request.albumId) || Object.keys(request).length !== 1)) fail()
   if (method === 'catalog-search' && !(typeof request.query === 'string' && Object.keys(SEARCH_PAGES).every(kind => isSearchPage(request[kind])))) fail()
   if (method === 'playback-links' && !(Array.isArray(request.assetIds) && request.assetIds.length <= MAX_PLAYBACK_LINKS && request.assetIds.every(isCatalogId))) fail()
   if (['set-field', 'lock-field', 'undo-field'].includes(method) && !REVIEW_FIELDS.includes(request.field)) fail()
@@ -121,7 +123,7 @@ function compareOperation({ operation, before }, nameOf) {
   return { label: 'Music server link', after: nameOf(operation.subject) }
 }
 
-export function createCatalogBridge(service, { now = Date.now, providerSourceId = NAVIDROME_SOURCE_ID, tools, newId = () => `${CHANGE_ID_PREFIX}${globalThis.crypto.randomUUID()}` } = {}) {
+export function createCatalogBridge(service, { now = Date.now, providerSourceId = NAVIDROME_SOURCE_ID, tools, estimates, soundSimilarity, newId = () => `${CHANGE_ID_PREFIX}${globalThis.crypto.randomUUID()}` } = {}) {
   // The anchor of a provider album, once a scan has linked it. Before the first scan the provider is not registered.
   const anchorOf = async providerAlbumId => {
     try { return (await service.resolveProviderId({ sourceId: providerSourceId, kind: 'album', externalId: providerAlbumId })).subject }
@@ -271,6 +273,9 @@ export function createCatalogBridge(service, { now = Date.now, providerSourceId 
       const result = await service.undoChangeSet({ id, operations, undoneAt: now() })
       return result.status === 'undone' ? { status: 'undone' } : { status: 'blocked', reason: result.reason, blockedBy: result.blockedBy }
     },
+    // Traits computed from the sound of each analysed album, by anchor ID. A view for display and Dig, not a decision.
+    estimatedTraits: async () => ({ albums: estimates ? await estimates.estimate() : {} }),
+    similarAlbums: async ({ albumId }) => soundSimilarity?.(albumId) ?? { analysed: false, albumIds: [] },
     // Runs a deterministic tool with no LLM involved. Only IDs and scores come back.
     tool: async ({ name, input }) => {
       if (!tools) throw new Error('Tools are not available')

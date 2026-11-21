@@ -104,6 +104,9 @@ jobs:
         working-directory: desktop
       - run: pnpm install --frozen-lockfile
         working-directory: tagsmith
+      # pnpm models exports the sound model from its published weights with PyTorch.
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
       # The required checks job ran the complete validation for this checkout.
       - id: package
         working-directory: desktop
@@ -146,6 +149,11 @@ jobs:
         working-directory: desktop
       - run: pnpm install --frozen-lockfile
         working-directory: tagsmith
+      # pnpm ffmpeg builds the bundled decoder (nasm for its x86 assembly); pnpm models exports the sound model with PyTorch.
+      - if: matrix.arch == 'x64'
+        run: sudo apt-get update && sudo apt-get install -y nasm
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
       # The required checks job ran the complete validation for this checkout.
       - run: pnpm dist:package
         working-directory: desktop
