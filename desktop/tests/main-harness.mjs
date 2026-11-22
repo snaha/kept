@@ -15,20 +15,20 @@ export async function until(predicate, message) {
 
 // Run the real main entrypoint with fake OS windows/children, but real HTTP ports
 // and credential files. Keep every file and resource inside this temporary fixture.
-export async function mainHarness({ setupComplete = false, migrationError } = {}) {
+export async function mainHarness({ setupComplete = false, migrationError, launchFailure } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'music-main-'));
   const key = crypto.randomUUID();
   const state = {
     directory, trace: [], windows: [], handlers: new Map(), children: [], databases: [],
     config: { setupComplete, musicFolders: [], musicFolder: '', source: 'empty' },
     profile: { name: 'review', root: directory, directory: path.join(directory, 'profile'), existingDirectory: path.join(directory, 'normal'), existing: false, portable: true },
-    app: new EventEmitter(), migrationError, saveError: undefined,
+    app: new EventEmitter(), migrationError, saveError: undefined, paths: {}, launchFailure,
   };
   state.migration = new Promise(resolve => { state.finishMigration = resolve; });
   Object.assign(state.app, {
     setName(name) { state.appName = name },
     getVersion: () => 'test', getPath: name => name === 'music' ? path.join(directory, 'Music') : directory,
-    setPath() {}, requestSingleInstanceLock: () => true, whenReady: async () => {}, isReady: () => true,
+    setPath(name, value) { state.paths[name] = value }, requestSingleInstanceLock: () => true, whenReady: async () => {}, isReady: () => true,
     quit() {
       const event = { prevented: false, preventDefault() { this.prevented = true; } };
       state.app.emit('before-quit', event);
@@ -69,7 +69,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
     profiles: `${access}
       import { existsSync, readFileSync } from 'node:fs';
       export const readJSON = (file, fallback = {}) => existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : fallback;
-      export const launchProfile = () => state.profile;
+      export const launchProfile = () => { if (state.launchFailure) throw new Error(state.launchFailure); return state.profile; };
       export const loadProfile = () => state.config;
       export const saveProfile = () => { if (state.saveError) { const error = state.saveError; state.saveError = undefined; throw error; } };
       export function lockProfile() {} export function rememberProfile() {}

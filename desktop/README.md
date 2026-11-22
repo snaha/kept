@@ -18,8 +18,18 @@ ordinary Wi-Fi traffic is unencrypted. See [phone sharing](../frontend/README.md
 
 `pnpm dev` also builds the frontend into the desktop output folder and builds the sandboxed preload bridge.
 
-Normal Kept data remains in `~/.config/Music` on Linux or `~/Library/Application Support/Music` on macOS.
-These legacy paths, the bundle IDs and the `app://music/` origin are intentionally retained after the Kept rename to preserve upgrades.
+Normal Kept data lives in `~/.config/Kept` on Linux or `~/Library/Application Support/Kept` on macOS.
+Older versions used `Music` and `Music Preview` (`desktop/profiles.js`). Apple Music also writes to
+`~/Library/Application Support/Music` (`PlaybackSessions`), so the regular app moves only the entries it knows as its
+own or Chromium's into `Kept.moving`, then renames that to `Kept`; an interrupted move resumes, a failed one is put
+back, and a half-moved profile is neither opened nor offered for copying. A `Kept` folder only counts once it holds
+Kept's data: an empty one, such as Electron makes for a launch that fails before picking a profile (a failed launch
+now uses a throwaway folder instead), is renamed to `Kept.unused-<time>` and the move goes ahead. Unknown entries stay and are logged.
+Music Preview is renamed whole. Nothing moves while a Kept has it open (versions before 0.6 have no lock: quit them
+before updating), and each channel moves only its own folder. A window already open in the other channel keeps the
+paths it started with until it is relaunched. Navidrome stores song paths relative to its music folder, so song IDs,
+playlists and ratings survive the move.
+The bundle IDs and the `app://music/` origin are intentionally retained after the Kept rename to preserve upgrades.
 This includes Navidrome's database and `credentials.json`, `music.sqlite` listening history,
 and Chromium storage. `profile.json` records the selected music folder and completed setup.
 Create a new fresh profile from Settings instead of deleting an existing database. `Ctrl+Q` (`Cmd+Q` on macOS) quits.
@@ -27,7 +37,7 @@ Create a new fresh profile from Settings instead of deleting an existing databas
 ## Preview profiles and portable folders
 
 Preview builds use the **Kept Preview** application identity and an independent profile by default:
-`<appData>/Music Preview/profiles/default`. Later launches continue the last selected preview profile.
+`<appData>/Kept Preview/profiles/default`. Later launches continue the last selected preview profile.
 
 - **Fresh**: open the default Music folder, add custom folders alongside it, or explore an empty collection. Remove any unwanted folder before opening. Kept scans files in place; audio is not copied.
 - **Copy existing**: quit normal Kept first, then copy its index, history, tags and preferences into a new preview profile. The copy remains independent.

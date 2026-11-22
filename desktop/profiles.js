@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { cp, readdir, rm } from 'node:fs/promises';
-import { existsSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const readJSON = (file, fallback = {}) => {
@@ -52,6 +52,93 @@ const profileName = value => {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(value)) throw new Error('Profile names must contain 1–64 letters, numbers, underscores or hyphens.');
   return value;
 };
+// Kept's data used to live in folders named after the app's first name, Music. Apple Music also writes to
+// ~/Library/Application Support/Music (PlaybackSessions), so that folder is never moved as a whole: a launch of the
+// regular app moves only what Kept put there into a new Kept folder, and anything it does not recognise stays.
+// Music Preview holds only Kept's profiles and is renamed whole. Each channel moves only the folder it opens, so the
+// other channel keeps finding its data, and nothing moves while a Kept has it open.
+const STABLE = { name: 'Kept', legacy: 'Music' }, PREVIEW = { name: 'Kept Preview', legacy: 'Music Preview' };
+const STAGING_SUFFIX = '.moving';
+// Kept's own files, and what Electron's Chromium keeps for the window (settings, queue, cookies, caches).
+const KEPT_ENTRIES = new Set([
+  '.music-profile.lock', 'profile.json', 'preferences.json', 'assistant.json', 'analysis.json', 'features.json',
+  'music.sqlite', 'library.sqlite', 'features.sqlite', 'navidrome', 'spotify', 'music-folders', 'empty-music',
+  'Local Storage', 'Session Storage', 'IndexedDB', 'WebStorage', 'Partitioned WebStorage', 'Service Worker', 'File System',
+  'databases', 'blob_storage', 'Cookies', 'Preferences', 'Local State', 'Network', 'Network Persistent State',
+  'TransportSecurity', 'Trust Tokens', 'DIPS', 'SharedStorage', 'Shared Dictionary', 'QuotaManager', 'shared_proto_db',
+  'Dictionaries', 'VideoDecodeStats', 'Crashpad', 'DevToolsActivePort', 'declarative_performance_observer.db',
+  'Cache', 'Code Cache', 'GPUCache', 'GPUPersistentCache', 'ShaderCache', 'DawnCache', 'DawnGraphiteCache',
+  'DawnWebGPUCache', 'GraphiteDawnCache',
+]);
+const CHROMIUM_LOCKS = ['SingletonLock', 'SingletonSocket', 'SingletonCookie'];
+const isKeptEntry = entry => KEPT_ENTRIES.has(entry.replace(/-(journal|wal|shm)$/, ''));
+const isLink = file => { try { return lstatSync(file).isSymbolicLink(); } catch { return false; } };
+const isKeptProfile = directory => existsSync(path.join(directory, '.music-profile.lock')) || existsSync(path.join(directory, 'navidrome', 'credentials.json'));
+const previewProfiles = root => {
+  try { return readdirSync(path.join(root, 'profiles'), { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => path.join(root, 'profiles', entry.name)); }
+  catch { return []; }
+};
+const entries = directory => (existsSync(directory) ? readdirSync(directory) : []);
+// A Kept folder without Kept's data (one Electron made for a launch that failed early) does not stop a move. It is set
+// aside, never deleted.
+const setAside = directory => { if (existsSync(directory)) renameSync(directory, `${directory}.unused-${Date.now()}`); };
+const hasPreviewProfiles = root => previewProfiles(root).some(isKeptProfile);
+
+// The regular app's folder: Kept, or Music while it still holds Kept's data and has not been moved.
+// move: this launch opens it and may move it. opening: this launch opens it (a preview with --use-existing).
+function stableFolder(appData, { move, opening }) {
+  const current = path.join(appData, STABLE.name), old = path.join(appData, STABLE.legacy), staging = current + STAGING_SUFFIX;
+  if (isKeptProfile(current)) return current;
+  const resuming = existsSync(staging);
+  if (!resuming && !isKeptProfile(old)) return current;
+  if (!move) {
+    // Half of a moved profile is neither opened nor offered for copying; the next regular launch finishes the move.
+    if (resuming && opening) throw new Error('Kept is moving its data to a new folder. Open the regular Kept once, then try again.');
+    return resuming ? current : old;
+  }
+  try {
+    for (const directory of [old, staging]) if (existsSync(directory)) assertProfileClosed(directory);
+    setAside(current);
+    mkdirSync(staging, { recursive: true, mode: 0o700 });
+    for (const entry of entries(old)) {
+      const file = path.join(old, entry);
+      if (CHROMIUM_LOCKS.includes(entry)) { if (isLink(file)) rmSync(file); }
+      // A resumed move never overwrites what it already moved: a newer file of the same name stays in Music.
+      else if (isKeptEntry(entry) && !existsSync(path.join(staging, entry))) renameSync(file, path.join(staging, entry));
+    }
+    renameSync(staging, current);
+  } catch (error) {
+    // Another launch finished the move first.
+    if (isKeptProfile(current)) return current;
+    // A move interrupted by a crash carries on at the next launch. One that fails now is put back, so Music keeps working.
+    if (resuming) throw new Error(`Kept could not finish moving its data from ${old} to ${current}: ${error.message}`);
+    for (const entry of entries(staging)) renameSync(path.join(staging, entry), path.join(old, entry));
+    // Only an empty staging folder goes: anything still in it is resumed by the next launch.
+    try { rmdirSync(staging); } catch { /* resumed next launch */ }
+    console.error(`Kept: keeping data in ${old} for now:`, error.message);
+    return old;
+  }
+  try {
+    const left = entries(old).filter(entry => entry !== 'PlaybackSessions' && entry !== '.DS_Store');
+    if (left.length) console.error(`Kept: moved its data to ${current}; left in ${old}: ${left.join(', ')}`);
+  } catch { /* the move is done; the note is optional */ }
+  return current;
+}
+// The preview profiles' folder: Kept Preview, or Music Preview until it can be renamed.
+function previewFolder(appData, move) {
+  const current = path.join(appData, PREVIEW.name), old = path.join(appData, PREVIEW.legacy);
+  if (hasPreviewProfiles(current) || !hasPreviewProfiles(old)) return current;
+  if (!move) return old;
+  try {
+    for (const directory of previewProfiles(old)) assertProfileClosed(directory);
+    setAside(current);
+    renameSync(old, current);
+    return current;
+  } catch (error) {
+    console.error(`Kept: keeping data in ${old} for now:`, error.message);
+    return old;
+  }
+}
 export function launchProfile({ argv, env, appData, channel }) {
   const options = {};
   for (let i = 0; i < argv.length; i++) {
@@ -63,13 +150,12 @@ export function launchProfile({ argv, env, appData, channel }) {
     if (!value || value.startsWith('--')) throw new Error(`${name} needs a value.`);
     options[name.slice(2)] = value;
   }
-  // Kept retains the original Music directories so upgrades keep all user data.
-  const existingDirectory = path.join(appData, 'Music');
   const customRoot = options['data-dir'] || env.MUSIC_DATA_DIR;
   const explicitName = options.profile || env.MUSIC_PROFILE;
-  const root = customRoot ? path.resolve(customRoot) : path.join(appData, 'Music Preview');
   const useExisting = options.existing || (channel !== 'preview' && !customRoot && !explicitName);
   if (options.existing && (customRoot || explicitName)) throw new Error('Use --use-existing on its own. It opens the normal Kept profile.');
+  const existingDirectory = stableFolder(appData, { move: useExisting && channel !== 'preview', opening: useExisting });
+  const root = customRoot ? path.resolve(customRoot) : previewFolder(appData, !useExisting && channel === 'preview');
   const last = useExisting || explicitName ? 'default' : readJSON(path.join(root, 'last-profile.json'), { name: 'default' }).name;
   const name = useExisting ? 'existing' : profileName(explicitName || last);
   return { name, root, directory: useExisting ? existingDirectory : path.join(root, 'profiles', name), existingDirectory, existing: useExisting, portable: !!customRoot };
