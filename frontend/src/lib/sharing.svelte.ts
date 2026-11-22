@@ -40,7 +40,9 @@ export async function shareLink(signal?: AbortSignal) {
   if (status && (!d?.password || serverUrl(status.url) !== base || status.username !== username)) {
     throw new Error('Open Share from this desktop profile’s own library.')
   }
-  const ip = d ? await window.desktop!.lanIp() : ''
+  const catalog = d ? await window.desktop?.lanShare?.() : undefined
+  assertCurrent()
+  const ip = d && !catalog ? await window.desktop!.lanIp() : ''
   assertCurrent()
   const lan = (value: string) => {
     const url = new URL(value)
@@ -48,8 +50,8 @@ export async function shareLink(signal?: AbortSignal) {
     if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) url.hostname = __LAN_IP__
     return url.href
   }
-  const frontend = d ? `http://${ip}:${d.webPort}/` : lan(`${page.origin}${page.pathname}`)
-  const server = d ? `http://${ip}:${d.port}` : serverUrl(lan(base))
+  const frontend = catalog ? `${catalog.origin}/` : d ? `http://${ip}:${d.webPort}/` : lan(`${page.origin}${page.pathname}`)
+  const server = catalog?.server ?? (d ? `http://${ip}:${d.port}` : serverUrl(lan(base)))
   serverUrl(frontend)
   serverUrl(server)
   const key = `share.password.v2:${JSON.stringify([base, username])}`
@@ -90,5 +92,10 @@ export async function shareLink(signal?: AbortSignal) {
   }
 
   assertCurrent()
-  return `${frontend}#u=${USER}&p=${encodeURIComponent(password)}&s=${encodeURIComponent(server)}`
+  const fragment = new URLSearchParams({ u: USER, p: password, s: server })
+  if (catalog) {
+    fragment.set('catalog', catalog.key)
+    fragment.set('origin', catalog.origin)
+  }
+  return `${frontend}#${fragment}`
 }

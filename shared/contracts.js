@@ -1,10 +1,11 @@
 export const HISTORY_SCHEMA_VERSION = 1;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string';
-const CATALOG_REF_KINDS = ['navidrome', 'asset'];
+const CATALOG_REF_KINDS = ['navidrome', 'asset', 'spotify'];
+export const TRACK_SOURCES = ['local', 'spotify'];
 export const isCatalogRef = ref => object(ref) && CATALOG_REF_KINDS.includes(ref.kind) && text(ref.id) && ref.id.length > 0;
 export function isStoredTrack(track) {
-  return object(track) && text(track.id) && text(track.rawId) && text(track.title) && track.source === 'local'
+  return object(track) && text(track.id) && text(track.rawId) && text(track.title) && TRACK_SOURCES.includes(track.source)
     && typeof track.available === 'boolean' && text(track.cover) && (track.catalogRef === undefined || isCatalogRef(track.catalogRef))
     && (track.playbackOriginIndex === undefined || (Number.isInteger(track.playbackOriginIndex) && track.playbackOriginIndex >= 0));
 }

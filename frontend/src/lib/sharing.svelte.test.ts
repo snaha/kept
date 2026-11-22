@@ -126,14 +126,17 @@ describe('sharing credential ownership', () => {
   })
   it('exports the desktop LAN link without copying its profile password into browser preferences', async () => {
     const status = vi.fn(async () => ({ url: BASE, username: 'admin', share: { password: PROFILE_PASSWORD, port: SERVER_PORT, webPort: WEB_PORT } }))
+    const catalog = { origin: `http://192.0.2.10:${WEB_PORT}`, server: `http://192.0.2.10:${SERVER_PORT}`, key: 'catalog-only-fixture-key' }
     vi.stubGlobal('desktop', {
       status,
-      lanIp: async () => '192.0.2.10',
+      lanShare: async () => catalog,
     })
     const link = new URL(await shareLink())
     expect(link.origin).toBe(`http://192.0.2.10:${WEB_PORT}`)
     expect(params(link.href).get('s')).toBe(`http://192.0.2.10:${SERVER_PORT}`)
     expect(params(link.href).get('p')).toBe(PROFILE_PASSWORD)
+    expect(params(link.href).get('catalog')).toBe(catalog.key)
+    expect(params(link.href).get('origin')).toBe(catalog.origin)
     expect(status).toHaveBeenCalledOnce()
     expect(localStorage.length).toBe(0)
   })

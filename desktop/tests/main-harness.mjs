@@ -15,8 +15,9 @@ export async function until(predicate, message) {
 
 // Run the real main entrypoint with fake OS windows/children, but real HTTP ports
 // and credential files. Keep every file and resource inside this temporary fixture.
-export async function mainHarness({ setupComplete = false, migrationError } = {}) {
+export async function mainHarness({ setupComplete = false, migrationError, spotifyClientId, features } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'music-main-'));
+  if (features !== undefined) { await mkdir(path.join(directory, 'profile'), { recursive: true }); await writeFile(path.join(directory, 'profile', 'features.json'), JSON.stringify(features)); }
   const key = crypto.randomUUID();
   const state = {
     directory, trace: [], windows: [], handlers: new Map(), children: [], databases: [], catalogs: [],
@@ -43,7 +44,19 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
   const fixtures = globalThis.__musicMainFixtures ??= new Map();
   fixtures.set(key, state);
   const access = `const state = globalThis.__musicMainFixtures.get(${JSON.stringify(key)});`;
+  if (spotifyClientId) state.spotifyConfig = Promise.withResolvers();
   const mocks = {
+    'spotify-files': `${access}
+      export * from 'fs/promises';
+      import { readFile as read } from 'fs/promises';
+      export async function readFile(file, ...args) {
+        if (file.endsWith('/spotify/config.json') && file.startsWith(state.profile.directory)) {
+          await state.spotifyConfig.promise;
+          return JSON.stringify({ clientId: ${JSON.stringify(spotifyClientId)} });
+        }
+        return read(file, ...args);
+      }
+    `,
     electron: `${access}
       import { EventEmitter } from 'node:events';
       export const app = state.app;
@@ -52,7 +65,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
           send(_channel, status) { state.status = status; },
           setWindowOpenHandler() {}, executeJavaScript: async () => {},
         });
-        constructor() { super(); state.windows.push(this); }
+        constructor(options) { super(); this.options = options; state.windows.push(this); }
         async loadURL(url) { this.url = url; state.trace.push(['load', url]); }
         show() { this.visible = true; state.trace.push(['show', this.url]); }
         maximize() {} isVisible() { return this.visible; }
@@ -129,6 +142,7 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
   };
   const mapping = { electron: 'electron', './profiles.js': 'profiles', './storage-migration.js': 'migration', './music-database.js': 'database', './catalog-database.js': 'catalog', './library-service.js': 'library', 'node:child_process': 'child' };
   const dispose = async () => {
+    state.spotifyConfig?.resolve();
     state.finishMigration();
     state.app.quit();
     await until(() => state.stopped, 'Main fixture did not finish shutting down');
@@ -144,6 +158,9 @@ export async function mainHarness({ setupComplete = false, migrationError } = {}
       bundle: true, platform: 'node', format: 'esm', logLevel: 'silent',
       plugins: [{ name: 'main-fixture', setup(builder) {
         builder.onResolve({ filter: /^(electron|node:child_process|\.\/(profiles|storage-migration|music-database|catalog-database|library-service)\.js)$/ }, ({ path: name }) => ({ path: mapping[name], namespace: 'fixture' }));
+        if (spotifyClientId) builder.onResolve({ filter: /^node:fs\/promises$/ }, ({ importer }) => {
+          if (importer.endsWith('/spotify.js')) return { path: 'spotify-files', namespace: 'fixture' };
+        });
         builder.onLoad({ filter: /.*/, namespace: 'fixture' }, ({ path: name }) => ({ contents: mocks[name], loader: 'js' }));
       } }],
     });

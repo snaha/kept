@@ -15,7 +15,9 @@ const version = channel === 'preview' ? `${pkg.version}-preview.${run}.${commit.
 const configuration = buildConfiguration(pkg, channel, version, process.env)
 const { productName } = configuration
 const { developerSigned, notarizationConfigured } = signingConfiguration(process.env)
-const info = { dirty, version, channel, productName, commit, branch, builtAt: new Date().toISOString(), runUrl: process.env.GITHUB_RUN_ID ? `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : '', developerSigned, notarizationConfigured };
+// Kept's Spotify app, so users only sign in. A client ID is public; PKCE needs no secret.
+const spotifyClientId = /^[a-f\d]{32}$/i.test(process.env.SPOTIFY_CLIENT_ID?.trim() ?? '') ? process.env.SPOTIFY_CLIENT_ID.trim() : ''
+const info = { dirty, version, channel, productName, commit, branch, builtAt: new Date().toISOString(), runUrl: process.env.GITHUB_RUN_ID ? `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : '', developerSigned, notarizationConfigured, spotifyClientId };
 await writeFile(path.join(root, 'build-info.json'), JSON.stringify(info, undefined, 2));
 await writeFile(path.join(root, 'builder-config.json'), JSON.stringify(configuration, undefined, 2))
 console.log(`${productName} ${version} (${commit.slice(0, 7)}) · ${notarizationConfigured && developerSigned ? 'Developer ID + notarization configured (verification pending)' : macDownloadNotice(false, { productName })}`)

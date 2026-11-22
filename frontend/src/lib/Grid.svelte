@@ -17,6 +17,7 @@
   import { library, setMode, type Mode, type Tile } from './library.svelte';
   import { session } from './api.svelte';
   import CatalogSearch from './CatalogSearch.svelte';
+  import { spotify } from './spotify.svelte';
   import { catalogSearch, startCatalogSearch, captureCatalogSearch, restoreCatalogSearch } from './catalog-search.svelte';
   import { player, collectionPlayback } from './player.svelte';
   import CollectionPlayback from './CollectionPlayback.svelte';
@@ -78,7 +79,7 @@
   const catalogRevision = $derived(library.revision);
   $effect(() => {
     const term = query.trim().slice(0, 500), source = library.source;
-    session.api; searchAccount; catalogRevision;
+    session.api; searchAccount; catalogRevision; spotify.connected; spotify.account;
     return untrack(() => startCatalogSearch(term, source));
   });
   let artistFilter = $state('');

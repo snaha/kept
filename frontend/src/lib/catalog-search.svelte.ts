@@ -2,8 +2,11 @@ import { session } from './api.svelte';
 import { library } from './library.svelte';
 import { metadata } from './discovery.svelte';
 import { localCatalog } from './local-catalog';
-import { searchCatalogSource } from './catalog-source.svelte';
+import { catalogSearchFor, type SearchCatalog } from './catalog-source.svelte'
 import { player } from './player.svelte';
+import { spotify, spotifyBridge } from './spotify.svelte'
+import { spotifyTrack } from './spotify-track'
+import { SPOTIFY_SEARCH_MAX_QUERY } from '../../../shared/spotify-source.js'
 import { type Collection, type Track, type Source } from './music';
 
 export const normalizeSearch = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
@@ -22,6 +25,7 @@ class CatalogSearchState {
   query = $state(''); source = $state<Source | 'all'>('all');
   collections = $state.raw<Collection[]>([]); artists = $state.raw<Collection[]>([]); tracks = $state.raw<Track[]>([]);
   loading = $state(false); errors = $state<Record<string, string>>({}); moreLocal = $state(false);
+  spotifyTracks = $state.raw<Track[]>([]); spotifyLoading = $state(false); spotifyError = $state('');
 }
 export const catalogSearch = new CatalogSearchState();
 type Snapshot = { collections: Collection[]; artists: Collection[]; tracks: Track[]; playlists: Collection[] };
@@ -41,8 +45,59 @@ function publish() {
   if (localReady) { catalogSearch.artists = reconcile(catalogSearch.artists, incoming.artists); catalogSearch.tracks = reconcile(catalogSearch.tracks, incoming.tracks); }
 }
 let generation = 0, timer: ReturnType<typeof setTimeout> | undefined;
+// Spotify answers one query at a time over the internet, under a quota: it waits for typing to settle and keeps
+// its own owner, so local refreshes (a scan, a revision) neither cancel nor repeat it.
+const SPOTIFY_SEARCH_DELAY_MS = 400
+let spotifyGeneration = 0, spotifyTimer: ReturnType<typeof setTimeout> | undefined, spotifyKey = ''
+const trackMatches = (track: Track, words: string[]) => words.every(word => normalizeSearch([track.title, track.artist, track.album, ...(track.origins ?? []).map(origin => origin.title)].join(' ')).includes(word))
+function stopSpotifySearch() {
+  spotifyGeneration++
+  clearTimeout(spotifyTimer)
+  spotifyKey = ''
+  catalogSearch.spotifyLoading = false
+  catalogSearch.spotifyError = ''
+}
+function searchSpotify(query: string, words: string[], retry = false) {
+  const bridge = spotifyBridge()
+  if (!bridge || !words.length || query.length > SPOTIFY_SEARCH_MAX_QUERY || !spotify.connected || spotify.signingOut) {
+    stopSpotifySearch()
+    catalogSearch.spotifyTracks = []
+    return
+  }
+  const key = JSON.stringify([spotify.account, query])
+  if (key === spotifyKey && !retry) return // already attempted or on its way
+  if (!includes('spotify') || navigator.onLine === false) {
+    if (key !== spotifyKey) {
+      stopSpotifySearch()
+      catalogSearch.spotifyTracks = []
+    }
+    return
+  }
+  stopSpotifySearch()
+  spotifyKey = key
+  const mine = spotifyGeneration
+  catalogSearch.spotifyTracks = catalogSearch.spotifyTracks.filter(track => trackMatches(track, words))
+  catalogSearch.spotifyLoading = true
+  spotifyTimer = setTimeout(async () => {
+    try {
+      const results = await bridge.search(query)
+      if (mine !== spotifyGeneration) return
+      catalogSearch.spotifyTracks = reconcile(catalogSearch.spotifyTracks, results.map(spotifyTrack))
+    } catch (error) {
+      if (mine !== spotifyGeneration) return
+      catalogSearch.spotifyError = (error as Error).message
+    } finally {
+      if (mine === spotifyGeneration) catalogSearch.spotifyLoading = false
+    }
+  }, SPOTIFY_SEARCH_DELAY_MS)
+}
+export function retrySpotifySearch() {
+  searchSpotify(catalogSearch.query, searchWords(catalogSearch.query), true)
+}
+let localSearch: { api: NonNullable<typeof session.api>; search: SearchCatalog } | undefined
 let localOffsets = { album: 0, artist: 0, song: 0 }, localMore = { album: true, artist: true, song: true };
-let playlistApi: typeof session.api = null, playlistCount = -1, playlistRequest: Promise<Collection[]> | undefined, knownPlaylists: Collection[] = [];
+let playlistApi: NonNullable<typeof session.api> | undefined
+let playlistCount = -1, playlistRequest: Promise<Collection[]> | undefined, knownPlaylists: Collection[] = []
 let accountScope = '';
 const pageSize = 50;
 let refreshTargets = { album: pageSize, artist: pageSize, song: pageSize };
@@ -66,11 +121,11 @@ function songAlbum(track: Track, collections: Collection[]): Collection | undefi
     sub: track.artist ?? '', cover: track.cover, count: 1, available: true,
   };
 }
-async function localPage(mine: number, query: string, api: NonNullable<typeof session.api>) {
+async function localPage(search: SearchCatalog, query: string, isCurrent: () => boolean) {
   const offsets = { ...localOffsets }, more = { ...localMore };
-  const result = await searchCatalogSource(api, { query, albumCount: more.album ? pageSize : 0, albumOffset: offsets.album,
-    artistCount: more.artist ? pageSize : 0, artistOffset: offsets.artist, songCount: more.song ? pageSize : 0, songOffset: offsets.song });
-  if (mine !== generation || api !== session.api) return;
+  const result = await search({ query, albumCount: more.album ? pageSize : 0, albumOffset: offsets.album,
+    artistCount: more.artist ? pageSize : 0, artistOffset: offsets.artist, songCount: more.song ? pageSize : 0, songOffset: offsets.song })
+  if (!isCurrent()) return
   const albums = result.collections, tracks = result.tracks, owners = [...albums, ...(result.related ?? [])];
   const associated = tracks.map(track => songAlbum(track, owners)).filter((tile): tile is Collection => !!tile);
   incoming.collections = merge(incoming.collections, [...albums, ...associated]);
@@ -84,28 +139,44 @@ async function localPage(mine: number, query: string, api: NonNullable<typeof se
 }
 async function load(mine: number, playlists = false) {
   const api = session.api, query = catalogSearch.query;
+  const isCurrent = () => mine === generation && api === session.api
   const jobs: [string, Promise<void>][] = [];
   if (includes('local') && api && (playlists || catalogSearch.moreLocal)) jobs.push(['Local music', (async () => {
     const ready = localReady;
     try {
+      const search = localSearch?.api === api ? localSearch.search : await catalogSearchFor(api)
+      if (!isCurrent()) return
+      localSearch = { api, search }
       do {
-        await localPage(mine, query, api);
-        if (mine !== generation || api !== session.api) return;
+        await localPage(search, query, isCurrent)
+        if (!isCurrent()) return
       } while (playlists && (['album', 'artist', 'song'] as const).some(key => localMore[key] && localOffsets[key] < refreshTargets[key]));
-    } catch (error) { if (mine === generation) localReady = ready; throw error; }
+    } catch (error) {
+      if (isCurrent()) localReady = ready
+      throw error
+    }
   })()]);
   if (playlists && includes('local') && api) jobs.push(['Local playlists', localPlaylists().then(tiles => {
-    if (mine === generation && api === session.api) { incoming.playlists = tiles.filter(tile => collectionMatches(tile, searchWords(query))); playlistsReady = true; }
+    if (!isCurrent()) return
+    incoming.playlists = tiles.filter(tile => collectionMatches(tile, searchWords(query)))
+    playlistsReady = true
   })]);
   await Promise.all(jobs.map(async ([name, job]) => {
-    try { await job; if (mine === generation) delete catalogSearch.errors[name]; }
-    catch (error) { if (mine === generation) catalogSearch.errors[name] = (error as Error).message; }
+    try {
+      await job
+      if (isCurrent()) delete catalogSearch.errors[name]
+    } catch (error) {
+      if (isCurrent()) catalogSearch.errors[name] = (error as Error).message
+    }
   }));
-  if (mine === generation) { if (localReady || playlistsReady) publish(); catalogSearch.loading = false; }
+  if (!isCurrent()) return
+  if (localReady || playlistsReady) publish()
+  catalogSearch.loading = false
 }
 export function startCatalogSearch(query: string, source: Source | 'all') {
   const mine = ++generation;
   clearTimeout(timer);
+  localSearch = undefined
   const words = searchWords(query);
   const scope = JSON.stringify([session.base, session.username]);
   const accountChanged = scope !== accountScope;
@@ -117,6 +188,8 @@ export function startCatalogSearch(query: string, source: Source | 'all') {
   refreshTargets = changed ? { album: pageSize, artist: pageSize, song: pageSize } : { album: Math.max(pageSize, refreshTargets.album, localOffsets.album), artist: Math.max(pageSize, refreshTargets.artist, localOffsets.artist), song: Math.max(pageSize, refreshTargets.song, localOffsets.song) };
   localOffsets = { album: 0, artist: 0, song: 0 }; localMore = { album: true, artist: true, song: true };
   catalogSearch.moreLocal = false;
+  if (accountChanged) stopSpotifySearch()
+  searchSpotify(query, words)
   if (!words.length) { catalogSearch.collections = []; catalogSearch.artists = []; catalogSearch.tracks = []; catalogSearch.loading = false; return; }
   const allowed = (item: { source: Source }) => source === 'all' || item.source === source;
   const immediate = library.tiles.filter(tile => tile.kind !== 'playlist' && allowed(tile) && collectionMatches(tile, words));
@@ -124,7 +197,7 @@ export function startCatalogSearch(query: string, source: Source | 'all') {
   incoming = { collections: immediate, playlists: [], tracks: [], artists: [] };
   if (changed) {
     catalogSearch.collections = immediate; catalogSearch.artists = [];
-    catalogSearch.tracks = merge(previous, player.queue).filter(track => allowed(track) && words.every(word => normalizeSearch([track.title, track.artist, track.album, ...(track.origins ?? []).map(origin => origin.title)].join(' ')).includes(word)));
+    catalogSearch.tracks = merge(previous, player.queue).filter(track => track.source !== 'spotify' && allowed(track) && trackMatches(track, words));
   } // Retain the visible snapshot until this refresh successfully responds.
   catalogSearch.loading = true;
   timer = setTimeout(() => { void load(mine, true); }, 150);
@@ -136,14 +209,24 @@ export function moreCatalogSearch() {
   void load(generation);
 }
 
-export function disposeCatalogSearch() { generation++; clearTimeout(timer); catalogSearch.loading = false; playlistApi = null; playlistRequest = undefined; }
+export function disposeCatalogSearch() {
+  generation++
+  clearTimeout(timer)
+  stopSpotifySearch()
+  catalogSearch.loading = false
+  localSearch = undefined
+  playlistApi = undefined
+  playlistRequest = undefined
+}
 
 // A deliberate detour can restore its loaded pages immediately, then refresh in place.
 export function captureCatalogSearch() {
   return {
     scope: accountScope, api: session.api, query: catalogSearch.query, source: catalogSearch.source,
     collections: catalogSearch.collections, artists: catalogSearch.artists, tracks: catalogSearch.tracks,
+    spotifyTracks: catalogSearch.spotifyTracks, spotifyKey: catalogSearch.spotifyLoading ? '' : spotifyKey, spotifyError: catalogSearch.spotifyError,
     offsets: { ...localOffsets }, targets: { ...refreshTargets },
+    localSearch,
   }
 }
 export function restoreCatalogSearch(saved: ReturnType<typeof captureCatalogSearch>) {
@@ -155,6 +238,11 @@ export function restoreCatalogSearch(saved: ReturnType<typeof captureCatalogSear
   catalogSearch.collections = saved.collections
   catalogSearch.artists = saved.artists
   catalogSearch.tracks = saved.tracks
+  stopSpotifySearch()
+  catalogSearch.spotifyTracks = saved.spotifyTracks
+  spotifyKey = saved.spotifyKey
+  catalogSearch.spotifyError = saved.spotifyError
   localOffsets = { ...saved.offsets }
   refreshTargets = { ...saved.targets }
+  localSearch = saved.localSearch
 }

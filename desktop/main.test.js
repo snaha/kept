@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mainHarness, until } from './tests/main-harness.mjs';
+import { featuresFromArgv } from './feature-argument.js'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -8,6 +9,37 @@ const HTTP_OK = 200
 const HTTP_BAD_REQUEST = 400
 const HTTP_NOT_FOUND = 404
 const HTTP_SERVER_ERROR = 500
+const SPOTIFY_CLIENT_ID_LENGTH = 32
+
+test('the renderer’s first Spotify status waits for the profile client ID', async () => {
+  const clientId = 'a'.repeat(SPOTIFY_CLIENT_ID_LENGTH)
+  const { state, dispose } = await mainHarness({ spotifyClientId: clientId, features: { spotify: true } })
+  try {
+    state.finishMigration()
+    await until(() => state.windows[0].url === 'app://music/', 'Library document did not load')
+    const request = state.handlers.get('spotify:status')(state.event())
+    let response
+    void request.then(result => { response = result })
+    await new Promise(setImmediate)
+    assert.equal(response, undefined, 'status is still waiting for the saved settings')
+    state.spotifyConfig.resolve()
+    const { value } = await request
+    assert.equal(value.clientId, clientId)
+    assert.equal(value.connected, false)
+  } finally { await dispose() }
+})
+
+test('Spotify stays out of a profile that has not turned it on', async () => {
+  for (const [features, enabled] of [[undefined, false], [{ spotify: false }, false], [{ spotify: true }, true]]) {
+    const { state, dispose } = await mainHarness({ features })
+    try {
+      state.finishMigration()
+      await until(() => state.windows[0]?.url === 'app://music/', 'Library document did not load')
+      assert.equal(state.handlers.has('spotify:status'), enabled, JSON.stringify(features))
+      assert.equal(featuresFromArgv(state.windows[0].options.webPreferences.additionalArguments).has('spotify'), enabled)
+    } finally { await dispose() }
+  }
+})
 
 test('frontend contains malformed paths and file errors without stopping the desktop service', async () => {
   const { state, dispose } = await mainHarness()
@@ -139,6 +171,9 @@ test('the catalog opens with the profile, answers only trusted and valid request
     assert.deepEqual(await call('set-consent', state.event(), { consent: 'online-lookups', value: 'denied' }), { value: {} })
     assert.equal(state.interruptedAfter[0], 'setConsent')
     assert.equal(state.interruptedAfter[1].value, 'denied')
+    const writes = catalog.calls.length
+    assert.deepEqual(await call('set-consent', state.event(), { consent: 'spotify', value: 'granted' }), { error: 'Invalid catalog request' })
+    assert.equal(catalog.calls.length, writes, 'the window cannot grant Spotify consent')
     const notifications = []
     state.windows[0].webContents.send = channel => notifications.push(channel)
     state.publishRepair()

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
-  import { catalogSearch, startCatalogSearch, moreCatalogSearch } from './catalog-search.svelte';
+  import { catalogSearch, startCatalogSearch, moreCatalogSearch, retrySpotifySearch } from './catalog-search.svelte';
   import { player, play, toggle, enqueue } from './player.svelte';
   import type { Collection, Track } from './music';
   import Icon from './ui/icon.svelte';
@@ -11,6 +11,10 @@
   const albums = $derived(catalogSearch.collections.filter(tile => tile.kind === 'album'));
   const playlists = $derived(catalogSearch.collections.filter(tile => tile.kind === 'playlist'));
   const tracks = $derived(kind === 'all' ? catalogSearch.tracks.slice(0, 5) : catalogSearch.tracks);
+  const spotifyVisible = $derived(catalogSearch.source === 'all' || catalogSearch.source === 'spotify');
+  const spotifyTracks = $derived(!spotifyVisible ? [] : kind === 'all' ? catalogSearch.spotifyTracks.slice(0, 5) : catalogSearch.spotifyTracks);
+  const spotifyError = $derived(spotifyVisible ? catalogSearch.spotifyError : '');
+  const withSpotify = $derived(spotifyVisible && (catalogSearch.spotifyLoading || spotifyTracks.length > 0 || !!spotifyError));
   const artists = $derived(kind === 'all' ? catalogSearch.artists.slice(0, 6) : catalogSearch.artists);
   const groups = $derived([{ type: 'album', label: 'Albums', items: albums }, { type: 'playlist', label: 'Playlists', items: playlists }]);
   let resultsElement: HTMLElement;
@@ -24,6 +28,7 @@
       ...((kind === 'all' || kind === 'album') && albums.length ? ['album'] : []),
       ...((kind === 'all' || kind === 'playlist') && playlists.length ? ['playlist'] : []),
       ...((kind === 'all' || kind === 'artist') && artists.length ? ['artist'] : []),
+      ...((kind === 'all' || kind === 'song') && spotifyTracks.length ? ['spotify'] : []),
     ];
     // Keep groups in their first-seen order as provider responses settle.
     const previous = untrack(() => groupOrder), changed = key !== layoutKey;
@@ -47,24 +52,28 @@
       if (Math.abs(delta) > .5) scroller.scrollTop += delta;
     });
   });
-  const count = $derived(kind === 'song' ? catalogSearch.tracks.length : kind === 'album' ? albums.length : kind === 'playlist' ? playlists.length : kind === 'artist' ? catalogSearch.artists.length : catalogSearch.tracks.length + catalogSearch.collections.length + catalogSearch.artists.length);
+  const spotifyCount = $derived(spotifyVisible && (kind === 'all' || kind === 'song') ? catalogSearch.spotifyTracks.length : 0);
+  const count = $derived(spotifyCount + (kind === 'song' ? catalogSearch.tracks.length : kind === 'album' ? albums.length : kind === 'playlist' ? playlists.length : kind === 'artist' ? catalogSearch.artists.length : catalogSearch.tracks.length + catalogSearch.collections.length + catalogSearch.artists.length));
+  const searching = $derived(catalogSearch.loading || (spotifyVisible && catalogSearch.spotifyLoading));
   const fmt = (duration = 0) => `${Math.floor(duration / 60)}:${String(Math.floor(duration % 60)).padStart(2, '0')}`;
   function listen(track: Track) { if (player.song?.id === track.id) void toggle(); else play([track]); }
   function retry() { startCatalogSearch(catalogSearch.query, catalogSearch.source); }
 </script>
 
 <section class="results" bind:this={resultsElement} style:padding-top="{top + 20}px" aria-label="Catalog search results">
-  <header><div><h1>Search results</h1><p>Your music · Albums, songs, artists and playlists</p></div><button class="clear" onclick={onclear}>Clear search</button></header>
-  <p class="search-status" role="status">{catalogSearch.loading ? 'Searching your catalog…' : `${count} ${count === 1 ? 'result' : 'results'}${catalogSearch.moreLocal ? ' loaded' : ''}`}</p>
+  <header><div><h1>Search results</h1><p>{withSpotify ? 'Your music and Spotify' : 'Your music'} · Albums, songs, artists and playlists</p></div><button class="clear" onclick={onclear}>Clear search</button></header>
+  <p class="search-status" role="status">{searching ? (withSpotify ? 'Searching your catalog and Spotify…' : 'Searching your catalog…') : `${count} ${count === 1 ? 'result' : 'results'}${catalogSearch.moreLocal ? ' loaded' : ''}`}</p>
   {#each Object.entries(catalogSearch.errors) as [source, message]}
     <p class="notice" role="alert">{source} could not be searched: {message} <button onclick={retry}>Retry search</button></p>
   {/each}
+  {#if spotifyError}<p class="notice" role="alert">Spotify could not be searched: {spotifyError} <button onclick={retrySpotifySearch}>Retry search</button></p>{/if}
   {#each groupOrder as group (group)}
     {#if group === 'song'}{@render songResults()}
+    {:else if group === 'spotify'}{@render spotifyResults()}
     {:else if group === 'artist'}{@render artistResults()}
     {:else}{@const category = groups.find(item => item.type === group)!}{@render collectionResults(category.type, category.label, category.items)}{/if}
   {/each}
-  {#if !count && !catalogSearch.loading && !Object.keys(catalogSearch.errors).length}<p class="notice">No matches for “{catalogSearch.query}”. Try a song, album, artist or playlist name.</p>{/if}
+  {#if !count && !searching && !Object.keys(catalogSearch.errors).length && !spotifyError}<p class="notice">No matches for “{catalogSearch.query}”. Try a song, album, artist or playlist name.</p>{/if}
   {#if catalogSearch.moreLocal}<button class="more" onclick={moreCatalogSearch} disabled={catalogSearch.loading}>{catalogSearch.loading ? 'Loading results…' : 'Load more results'}</button>{/if}
 </section>
 
@@ -72,22 +81,29 @@
   {#if kind === 'all' || kind === 'song'}
     {#if tracks.length}
       <section aria-label="Song results"><h2>Songs <span>{catalogSearch.tracks.length}{catalogSearch.moreLocal ? '+' : ''}</span></h2>
-        {#each tracks as track (track.id)}
-          {@const current = player.song?.id === track.id}
-          {@const listening = current && player.playing && !player.pending}
-          <div class="song-row" class:current>
-            <button class="song" onclick={() => listen(track)} disabled={!track.available} aria-label="{current && (player.playing || player.pending) ? 'Pause' : 'Play'} {track.title}">
-              <span class="song-cover">{#if track.cover}<img src={track.cover} alt="" loading="lazy" />{/if}<span class="song-state">{#if current && player.pending}<svg class="pending" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="28 22" /></svg>{:else}{#if listening}<span class="listening"><Icon name="listening" /></span><span class="pause"><Icon name="pause" /></span>{:else}<Icon name="play" />{/if}{/if}</span></span>
-              <span class="song-name">{track.title}<small>{track.artist || 'Unknown artist'}{#if track.album} · {track.album}{/if}{#if !track.available} · Unavailable{/if}</small></span>
-              <span class="song-source">Local</span><span class="duration">{fmt(track.duration)}</span>
-            </button>
-            <button class="add" onclick={() => enqueue([track])} disabled={!track.available} aria-label="Add {track.title} to queue" title="Add to queue"><Icon name="plus" /></button>
-          </div>
-        {/each}
+        {#each tracks as track (track.id)}{@render songRow(track, 'Local')}{/each}
         {#if kind === 'all' && catalogSearch.tracks.length > 5}<button class="more" onclick={() => changeKind('song')}>Show all songs</button>{/if}
       </section>
     {/if}
   {/if}
+{/snippet}
+{#snippet songRow(track: Track, source: string)}
+  {@const current = player.song?.id === track.id}
+  {@const listening = current && player.playing && !player.pending}
+  <div class="song-row" class:current>
+    <button class="song" onclick={() => listen(track)} disabled={!track.available} aria-label="{current && (player.playing || player.pending) ? 'Pause' : 'Play'} {track.title}">
+      <span class="song-cover">{#if track.cover}<img src={track.cover} alt="" loading="lazy" />{/if}<span class="song-state">{#if current && player.pending}<svg class="pending" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="28 22" /></svg>{:else}{#if listening}<span class="listening"><Icon name="listening" /></span><span class="pause"><Icon name="pause" /></span>{:else}<Icon name="play" />{/if}{/if}</span></span>
+      <span class="song-name">{track.title}<small>{track.artist || 'Unknown artist'}{#if track.album} · {track.album}{/if}{#if !track.available} · Unavailable{/if}</small></span>
+      <span class="song-source">{source}</span><span class="duration">{fmt(track.duration)}</span>
+    </button>
+    <button class="add" onclick={() => enqueue([track])} disabled={!track.available} aria-label="Add {track.title} to queue" title="Add to queue"><Icon name="plus" /></button>
+  </div>
+{/snippet}
+{#snippet spotifyResults()}
+  <section aria-label="Spotify song results"><h2>On Spotify <span>{catalogSearch.spotifyTracks.length}</span></h2>
+    {#each spotifyTracks as track (track.id)}{@render songRow(track, 'Spotify')}{/each}
+    {#if kind === 'all' && catalogSearch.spotifyTracks.length > 5}<button class="more" onclick={() => changeKind('song')}>Show all Spotify songs</button>{/if}
+  </section>
 {/snippet}
 {#snippet collectionResults(type: string, label: string, items: Collection[])}
     {#if (kind === 'all' || kind === type) && items.length}

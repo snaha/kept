@@ -82,6 +82,7 @@ jobs:
       notarized: ${{ steps.package.outputs.notarized }}
     env:
       MUSIC_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      SPOTIFY_CLIENT_ID: ${{ vars.SPOTIFY_CLIENT_ID }} # Kept's Spotify app; public, so a variable, not a secret
       # Stable and preview builds without credentials are explicitly unnotarized.
       # Only same-repository PRs can access signing credentials.
       # electron-builder otherwise skips signing on pull requests.
@@ -137,6 +138,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       MUSIC_CHANNEL: ${{ needs.prepare.outputs.channel }}
+      SPOTIFY_CLIENT_ID: ${{ vars.SPOTIFY_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

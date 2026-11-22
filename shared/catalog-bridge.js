@@ -4,6 +4,10 @@
 import { validateToolInput } from './tool-contracts.js'
 import { CONSENT_KEYS, FAVORITE_FIELD, TRAIT_NAMES, USER_SOURCE_ID, isCatalogId, isTraitValue, traitField, traitOfField } from './catalog-rules.js'
 import { MAX_SEARCH_LIMIT, MAX_TAG_LENGTH } from './catalog-projection.js'
+import { SPOTIFY_CONSENT } from './spotify-source.js'
+
+// The consents the window may decide. Provider sign-ins own theirs: Spotify's follows sign-in and sign-out in the main process.
+const WINDOW_CONSENT_KEYS = CONSENT_KEYS.filter(key => key !== SPOTIFY_CONSENT)
 
 export const NAVIDROME_SOURCE_ID = 'navidrome'
 // IPC operation name -> bridge method.
@@ -78,7 +82,7 @@ export function validateCatalogBridgeRequest(method, args) {
   if (method === 'tool') { if (Object.keys(request).some(key => key !== 'name' && key !== 'input')) fail(); validateToolInput(request.name, request.input) }
   if (method === 'set-trait' && !(isAlbumTarget(request) && TRAIT_NAMES.includes(request.trait) && (request.value === undefined || isTraitValue(request.value)) && isChangeId(request.changeId))) fail()
   if (method === 'set-favorite' && !(isAlbumTarget(request) && typeof request.value === 'boolean' && isChangeId(request.changeId))) fail()
-  if (method === 'set-consent' && !(CONSENT_KEYS.includes(request.consent) && CONSENT_VALUES.includes(request.value))) fail()
+  if (method === 'set-consent' && !(WINDOW_CONSENT_KEYS.includes(request.consent) && CONSENT_VALUES.includes(request.value))) fail()
   if (method === 'migrate' && !(isTime(request.decidedAt) && Array.isArray(request.albums) && request.albums.length <= MAX_MIGRATION_ALBUMS && request.albums.every(isMigrationAlbum))) fail()
   return request
 }
