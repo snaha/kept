@@ -45,8 +45,12 @@ describe('playback activity reports', () => {
 describe('job progress text', () => {
   it('shows what is left in each class and nothing once it is all done', () => {
     expect(jobsSummary(undefined)).toBeUndefined()
-    expect(jobsSummary({ mode: 'idle', classes: { hash: { queued: 3, running: 2, done: 5, failed: 0 } } })).toBe('reading files 5 / 10')
-    expect(jobsSummary({ mode: 'idle', classes: { reconstruct: { queued: 1, running: 1, done: 2, failed: 0 } } })).toBe('repairing albums 2 / 4')
-    expect(jobsSummary({ mode: 'playing', classes: { hash: { queued: 0, running: 0, done: 10, failed: 0 }, analyse: { queued: 1, running: 0, done: 0, failed: 1 } } })).toBe('listening 1 / 2')
+    expect(jobsSummary({ mode: 'idle', classes: { hash: { queued: 3, running: 2, done: 5, failed: 0 } } })).toBe('Reading files 5 / 10')
+    expect(jobsSummary({ mode: 'idle', classes: { reconstruct: { queued: 1, running: 1, done: 2, failed: 0 } } })).toBe('Repairing albums 2 / 4')
+    expect(jobsSummary({ mode: 'playing', classes: { hash: { queued: 0, running: 0, done: 10, failed: 0 }, analyse: { queued: 1, running: 0, done: 0, failed: 1 } } })).toBe('Analyzing 1 / 2')
+    const analysing = { mode: 'idle' as const, classes: { analyse: { queued: 4, running: 1, done: 5, failed: 0 } } }
+    expect(jobsSummary({ ...analysing, paused: ['analyse'] })).toBe('Analysis paused 5 / 10')
+    expect(jobsSummary(analysing, { analysisHidden: true })).toBeUndefined()
+    expect(jobsSummary({ ...analysing, classes: { ...analysing.classes, hash: { queued: 1, running: 0, done: 1, failed: 0 } } }, { analysisHidden: true })).toBe('Reading files 1 / 2')
   })
 })

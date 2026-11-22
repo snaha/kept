@@ -61,6 +61,11 @@ contextBridge.exposeInMainWorld('musicCatalog', {
   },
 })
 
+const analysisCall = async (operation, request) => {
+  const reply = await ipcRenderer.invoke(`analysis:${operation}`, request)
+  if (reply.error) throw new Error(reply.error)
+  return reply.value
+}
 // Background jobs: the window tells the library worker what the audio element is doing, so playback
 // is never starved, and shows how far the work has got.
 contextBridge.exposeInMainWorld('musicJobs', {
@@ -75,6 +80,10 @@ contextBridge.exposeInMainWorld('musicJobs', {
     ipcRenderer.on('jobs:changed', listener)
     return () => ipcRenderer.removeListener('jobs:changed', listener)
   },
+  // Sound analysis: how much of the collection has been heard, pause or resume it, or start it over.
+  analysisCoverage: () => analysisCall('coverage'),
+  pauseAnalysis: paused => analysisCall('pause', paused),
+  restartAnalysis: () => analysisCall('restart'),
 })
 
 // The optional assistant. The key is typed once into Settings and kept by the main process: the window can learn that one exists.

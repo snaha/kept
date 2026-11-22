@@ -43,6 +43,7 @@ const AU_HEADER_BYTES = 24
 const AU_PCM16_BIG_ENDIAN = 3
 const MEL_BASIS_BINS = 1025
 const WINDOW_TEST_SECONDS = 3
+const RACE_TIMEOUT_MS = 10_000
 const SYNTHETIC_PROBE_MEANS = { noise: -40.054656982421875, 'low-band': -62, 'time-step': -47.839195251464844 }
 const WITHIN_PROBE_TOLERANCE = 1e-4
 const PINNED_WEIGHTS = 'synthetic pinned weights'
@@ -351,7 +352,7 @@ test('the declared ffmpeg build is LGPL, audio only and pinned', () => {
 // A catalog with one music folder (three tracks of one album, one loose track) and one provider that forbids analysis.
 const SPOTIFY = { id: 'spotify', kind: 'spotify', label: 'Spotify', evidenceClass: 'deterministic', licence: 'proprietary', policy: { analysisAllowed: false, network: 'internet', consent: 'online-lookups' } }
 const hashOf = index => String(index + 1).repeat(HASH_LENGTH)
-const library = (t, { module = FIXTURE, ffmpeg = 'ffmpeg', files = LEVELS.map(level => `album/level-${level}.wav`), basis = true, duration = FIXTURE_DURATION } = {}) => {
+const library = (t, { module = FIXTURE, ffmpeg = 'ffmpeg', files = LEVELS.map(level => `album/level-${level}.wav`), basis = true, duration = FIXTURE_DURATION, fork = nodeFork, onCatalogChange } = {}) => {
   const directory = temporary(t)
   const folder = path.join(directory, 'music'), modelDir = path.join(directory, 'models')
   mkdirSync(folder)
@@ -373,7 +374,7 @@ const library = (t, { module = FIXTURE, ffmpeg = 'ffmpeg', files = LEVELS.map(le
   for (const file of files) { mkdirSync(path.dirname(path.join(folder, file)), { recursive: true }); writeFileSync(path.join(folder, file), '') }
   const analysis = createAnalysis({ catalog, features, folders: () => [folder], ffmpeg, modelDir, method: METHOD, module, onError: error => state.errors.push(error.message) })
   const policy = new ResourcePolicy()
-  const service = createLibraryService({ store: catalog, fork: nodeFork, classes: [], policy, analysis, onError: error => state.errors.push(error.message) })
+  const service = createLibraryService({ store: catalog, fork, classes: [], policy, analysis, onCatalogChange, onError: error => state.errors.push(error.message) })
   t.after(async () => { await service.stop(); await state.database.close(); raw.close() })
   const jobOf = async assetId => raw.get('SELECT * FROM jobs WHERE class=? AND subject=?', ANALYSE_CLASS, analyseSubject(METHOD, assetId))
   const settled = () => until(async () => (await service.status()).classes[ANALYSE_CLASS]?.queued + (await service.status()).classes[ANALYSE_CLASS]?.running === 0 || !(await service.status()).classes[ANALYSE_CLASS], 'the analysis queue empties')
@@ -634,4 +635,155 @@ test('the real analyser embeds a file with OpenL3 on one WASM thread', { skip: d
   // The same audio gives the same embedding.
   const again = decodeVector((await analyse(context({ file, duration: SINE_SECONDS, method, ffmpeg: decoder.file, modelDir }))).embedding)
   assert.deepEqual(again, embedding)
+})
+
+test('coverage counts the collection as heard; pausing holds the queue and restarting hears it all again', async t => {
+  const h = library(t)
+  const before = await h.service.analysisCoverage()
+  assert.deepEqual(before, { tracks: LEVELS.length, analysed: 0, unreadable: 0, unavailable: 0, waiting: LEVELS.length, refused: 1, ready: true, missing: undefined })
+
+  await h.service.pauseAnalysis(true)
+  await h.service.start()
+  assert.equal((await h.service.analyse()).queued, LEVELS.length)
+  await sleep(300)
+  assert.equal((await h.features.featureCounts(KEY)).tracks, 0, 'a paused analysis hears nothing')
+  assert.deepEqual((await h.service.status()).paused, [ANALYSE_CLASS])
+
+  await h.service.pauseAnalysis(false)
+  await until(async () => (await h.service.analysisCoverage()).analysed === LEVELS.length, 'resuming analyses every track')
+  await h.settled()
+  assert.equal((await h.service.analysisCoverage()).waiting, 0)
+
+  const restarted = await h.service.restartAnalysis()
+  assert.equal(restarted.queued, LEVELS.length, 'every track is queued again')
+  await until(async () => (await h.features.featureCounts(KEY)).tracks === LEVELS.length, 'every track is heard again')
+  assert.deepEqual((await h.service.analysisCoverage()).analysed, LEVELS.length)
+  assert.deepEqual(h.state.errors, [])
+})
+
+const trackFeatures = (assetId, value) => ({ ...KEY, assetId, embedding: vector(EMBEDDING_SIZE, value), dsp: vector(DSP_SIZE, value), windows: METHOD.windows, at: T0 })
+
+test('coverage classifies each candidate and checks whether pending files are still present', async t => {
+  const h = library(t)
+  const [analysed, legacy, unreadable] = h.assetIds
+  await h.features.putTrackFeatures(trackFeatures(analysed, LEVELS[0]))
+  await h.features.recordOutcome({ ...KEY, assetId: legacy, outcome: 'unreadable', reason: 'ffmpeg exited 1: synthetic.wav: No such file or directory', at: T0 })
+  await h.features.recordOutcome({ ...KEY, assetId: unreadable, outcome: 'unreadable', reason: 'invalid data', at: T0 })
+
+  assert.deepEqual(await h.service.analysisCoverage(), { tracks: LEVELS.length, analysed: 1, unreadable: 1, unavailable: 0, waiting: 1, refused: 1, ready: true, missing: undefined })
+  rmSync(path.join(h.folder, `album/level-${LEVELS[1]}.wav`))
+  assert.deepEqual(await h.service.analysisCoverage(), { tracks: LEVELS.length, analysed: 1, unreadable: 1, unavailable: 1, waiting: 0, refused: 1, ready: true, missing: undefined })
+})
+
+function controlledAnalyser() {
+  const runs = []
+  let receive
+  const fork = () => ({
+    post: message => { if (message.type === 'run') runs.push(message) },
+    onMessage: callback => { receive = callback },
+    onExit() {}, kill() {},
+  })
+  const finish = (run, value) => {
+    const { assetId, embedding, dsp, windows } = trackFeatures(run.job.payload.assetId, value)
+    receive({ type: 'done', id: run.id, result: { assetId, outcome: 'done', embedding: encodeVector(embedding), dsp: encodeVector(dsp), windows } })
+  }
+  return { runs, fork, finish }
+}
+
+test('Start over releases a running job and ignores its reply after the replacement starts', async t => {
+  const { runs, fork, finish } = controlledAnalyser()
+  const h = library(t, { files: ['album/synthetic-tone.wav'], fork })
+  const [assetId] = h.assetIds
+  await h.service.start()
+  await h.service.analyse()
+  await until(() => runs.length === 1, 'the first execution starts')
+  await h.service.restartAnalysis()
+  await until(() => runs.length === 2, 'the replacement execution starts')
+  assert.equal(runs[1].job.attempts, 1)
+  finish(runs[0], LEVELS[0])
+  finish(runs[1], LEVELS[1])
+  await h.settled()
+  assert.equal((await h.features.getTrackFeatures({ ...KEY, assetId })).features?.embedding[0], LEVELS[1])
+  assert.deepEqual((await h.service.status()).paused, [])
+})
+
+test('Start over waits for a feature write already in flight and clears it before refreshing windows', { timeout: RACE_TIMEOUT_MS }, async t => {
+  const { runs, fork, finish } = controlledAnalyser()
+  const purged = []
+  const h = library(t, { files: ['album/synthetic-tone.wav'], fork, onCatalogChange: () => purged.push(h.features.featureCounts(KEY)) })
+  const writing = Promise.withResolvers(), allowWrite = Promise.withResolvers()
+  const put = h.features.putTrackFeatures
+  t.mock.method(h.features, 'putTrackFeatures', async request => {
+    writing.resolve()
+    await allowWrite.promise
+    return put(request)
+  })
+  await h.service.start()
+  await h.service.analyse()
+  await until(() => runs.length === 1, 'the first execution starts')
+  finish(runs[0], LEVELS[0])
+  await writing.promise
+  const restarted = h.service.restartAnalysis()
+  try {
+    assert.deepEqual((await h.service.status()).paused, [ANALYSE_CLASS])
+    await h.service.pauseAnalysis(true)
+  } finally { allowWrite.resolve() }
+  await restarted
+  assert.equal(purged.length, 1)
+  assert.equal((await purged[0]).tracks, 0)
+  assert.equal((await h.service.analysisCoverage()).analysed, 0)
+  assert.equal((await h.jobOf(h.assetIds[0])).state, 'queued')
+  assert.deepEqual((await h.service.status()).paused, [ANALYSE_CLASS])
+})
+
+test('Start over rejects a failed purge or replacement sweep and invalidates the catalog only after a purge', async t => {
+  const purged = []
+  const h = library(t, { onCatalogChange: () => purged.push(h.features.featureCounts(KEY)) })
+  await h.service.pauseAnalysis(true)
+  await h.features.putTrackFeatures(trackFeatures(h.assetIds[0], LEVELS[0]))
+  const purge = t.mock.method(h.features, 'pruneMethods', async () => { throw new Error('fixture purge failed') })
+  await assert.rejects(h.service.restartAnalysis(), /fixture purge failed/)
+  assert.equal(purged.length, 0)
+  assert.equal((await h.service.analysisCoverage()).analysed, 1)
+  purge.mock.restore()
+
+  const enqueue = t.mock.method(h.catalog, 'enqueueJobs', async () => { throw new Error('fixture replacement sweep failed') })
+  await assert.rejects(h.service.restartAnalysis(), /fixture replacement sweep failed/)
+  assert.equal(purged.length, 1)
+  assert.equal((await purged[0]).tracks, 0)
+  assert.deepEqual((await h.service.status()).paused, [ANALYSE_CLASS])
+  enqueue.mock.restore()
+  assert.equal((await h.service.restartAnalysis()).queued, LEVELS.length)
+})
+
+test('Start over waits for an active scan sweep before purging and requeues its settled tracks', { timeout: RACE_TIMEOUT_MS }, async t => {
+  const h = library(t)
+  await h.service.pauseAnalysis(true)
+  await h.features.putTrackFeatures(trackFeatures(h.assetIds[0], LEVELS[0]))
+  const readPending = h.features.pendingAssets
+  const read = Promise.withResolvers(), release = Promise.withResolvers()
+  t.mock.method(h.features, 'pendingAssets', async request => {
+    const result = await readPending(request)
+    read.resolve()
+    await release.promise
+    return result
+  })
+  const swept = h.service.analyse()
+  await read.promise
+  const restarted = h.service.restartAnalysis()
+  try {
+    assert.equal((await h.features.featureCounts(KEY)).tracks, 1, 'the old sweep still owns the previous features')
+  } finally { release.resolve() }
+  assert.equal((await swept).settled, 1)
+  assert.equal((await restarted).queued, LEVELS.length)
+  assert.equal((await h.service.analysisCoverage()).analysed, 0)
+})
+
+test('Start over preserves features when the decoder or model is missing', async t => {
+  for (const options of [{ ffmpeg: '' }, { basis: false }]) {
+    const h = library(t, options)
+    await h.features.putTrackFeatures(trackFeatures(h.assetIds[0], LEVELS[0]))
+    await assert.rejects(h.service.restartAnalysis(), /Sound analysis is unavailable: no (audio decoder|sound model)/)
+    assert.equal((await h.service.analysisCoverage()).analysed, 1)
+  }
 })

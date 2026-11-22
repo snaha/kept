@@ -59,7 +59,7 @@ const listeners = new Set<() => void>()
 const changed = () => { for (const listener of [...listeners]) listener() }
 const scan = (files: ScanFile[], observedAt = T1) => service.ingestScan({ sourceId: 'folder-a', providerSourceId: 'navidrome', observedAt, rootAvailable: true, complete: true, files })
 const install = (overrides: Partial<Bridge> = {}) => { window.musicCatalog = { ...bridge, onChange: callback => { listeners.add(callback); return () => { listeners.delete(callback) } }, ...overrides } }
-const jobs = (queued: number) => { window.musicJobs = { reportPlayback() {}, status: async (): Promise<JobsStatus> => ({ mode: 'idle', classes: { hash: { queued, running: 0, done: 0, failed: 0 } } }), onChange: () => () => {} } }
+const jobs = (queued: number) => { window.musicJobs = { reportPlayback() {}, status: async (): Promise<JobsStatus> => ({ mode: 'idle', classes: { hash: { queued, running: 0, done: 0, failed: 0 } } }), onChange: () => () => {}, analysisCoverage: async () => undefined, pauseAnalysis: async () => ({ mode: 'idle', classes: {} }), restartAnalysis: async () => undefined } }
 const anchor = async (providerAlbumId: string) => (await bridge.albums()).albums[providerAlbumId].albumId
 const tileOf = (title: string) => library.tiles.find(tile => tile.title === title)!
 const propose = async (id: string, operations: Parameters<CatalogService['commitChangeSet']>[0]['operations']) =>

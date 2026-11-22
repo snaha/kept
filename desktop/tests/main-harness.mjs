@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -15,15 +16,16 @@ export async function until(predicate, message) {
 
 // Run the real main entrypoint with fake OS windows/children, but real HTTP ports
 // and credential files. Keep every file and resource inside this temporary fixture.
-export async function mainHarness({ setupComplete = false, migrationError, spotifyClientId, features } = {}) {
+export async function mainHarness({ setupComplete = false, migrationError, spotifyClientId, analysisSettings, features } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'music-main-'));
   if (features !== undefined) { await mkdir(path.join(directory, 'profile'), { recursive: true }); await writeFile(path.join(directory, 'profile', 'features.json'), JSON.stringify(features)); }
+  if (analysisSettings !== undefined) { mkdirSync(path.join(directory, 'profile'), { recursive: true }); writeFileSync(path.join(directory, 'profile', 'analysis.json'), JSON.stringify(analysisSettings)); }
   const key = crypto.randomUUID();
   const state = {
     directory, trace: [], windows: [], handlers: new Map(), children: [], databases: [], catalogs: [],
     config: { setupComplete, musicFolders: [], musicFolder: '', source: 'empty' },
     profile: { name: 'review', root: directory, directory: path.join(directory, 'profile'), existingDirectory: path.join(directory, 'normal'), existing: false, portable: true },
-    app: new EventEmitter(), migrationError, saveError: undefined,
+    app: new EventEmitter(), migrationError, saveError: undefined, pauses: [], restarts: 0,
   };
   state.migration = new Promise(resolve => { state.finishMigration = resolve; });
   Object.assign(state.app, {
@@ -82,8 +84,9 @@ export async function mainHarness({ setupComplete = false, migrationError, spoti
       export const safeStorage = { isEncryptionAvailable: () => false };
     `,
     profiles: `${access}
-      import { existsSync, readFileSync } from 'node:fs';
+      import { existsSync, readFileSync, writeFileSync } from 'node:fs';
       export const readJSON = (file, fallback = {}) => existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : fallback;
+      export const writeJSON = (file, value) => { if (state.writeError) throw state.writeError; writeFileSync(file, JSON.stringify(value)); };
       export const launchProfile = () => state.profile;
       export const loadProfile = () => state.config;
       export const saveProfile = () => { if (state.saveError) { const error = state.saveError; state.saveError = undefined; throw error; } };
@@ -124,7 +127,9 @@ export async function mainHarness({ setupComplete = false, migrationError, spoti
         state.publishRepair = onCatalogChange
         return { hashJobs: { prefetch: async () => {}, hash: async () => { throw new Error('No audio in this fixture') } },
           reconstruct: { async enqueuePending() {}, async interrupt() { state.interruptedAfter = state.catalogs[0].calls.at(-1) } },
-          async start() {}, async stop() {}, async status() { return { mode: 'idle', classes: {} } }, reportPlayback() {}, playbackEnded() {} }
+          async start() {}, async stop() {}, async status() { return { mode: 'idle', classes: {} } }, reportPlayback() {}, playbackEnded() {},
+          async analyse() {}, async pauseAnalysis(paused) { state.pauses.push(paused) }, async analysisCoverage() { return { tracks: 0 } },
+          async restartAnalysis() { state.restarts++; if (state.restartError) throw state.restartError } }
       }
     `,
     child: `${access}

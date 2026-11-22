@@ -10,7 +10,7 @@ import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { assertProfileClosed, copyProfile, launchProfile, listProfiles, loadProfile, lockProfile, newProfile, readJSON, rememberProfile, saveProfile, selectedProfile } from './profiles.js';
+import { assertProfileClosed, copyProfile, launchProfile, listProfiles, loadProfile, lockProfile, newProfile, readJSON, rememberProfile, saveProfile, selectedProfile, writeJSON } from './profiles.js';
 import { migrateStorage } from './storage-migration.js';
 import { normalizeMusicFolders, prepareMusicRoot, profileMusicFolders } from './music-folders.js';
 import { CATALOG_BRIDGE_METHODS, CATALOG_CHANGING_OPERATIONS, createCatalogBridge, validateCatalogBridgeRequest } from '../shared/catalog-bridge.js'
@@ -282,14 +282,41 @@ app.whenReady().then(async () => {
     onCatalogChange: broadcastRepairs,
     onError: error => console.error('Kept jobs:', error.message),
   })
+  // The user can pause sound analysis; the choice lasts across launches. The queue is kept while paused.
+  const analysisSettingsFile = path.join(profile.directory, 'analysis.json')
+  const readAnalysisSettings = () => {
+    try {
+      const settings = readJSON(analysisSettingsFile)
+      if (settings && typeof settings === 'object' && !Array.isArray(settings) && typeof settings.paused === 'boolean') return settings
+    } catch { /* Use the default when the preference cannot be read. */ }
+    return { paused: false }
+  }
   // What earlier launches left unanalysed is queued again at once; a finished scan queues what is new.
-  void library.start().then(() => library.analyse()).catch(error => console.error('Kept jobs:', error.message))
+  void library.pauseAnalysis(readAnalysisSettings().paused)
+    .then(() => library.start()).then(() => library.analyse()).catch(error => console.error('Kept jobs:', error.message))
   ipcMain.on('jobs:playback', (event, report) => {
     try { trusted(event); library.reportPlayback(report) } catch (error) { console.error('Kept jobs:', error.message) }
   })
   ipcMain.handle('jobs:status', async event => {
     trusted(event)
     try { return { value: await library.status() } } catch (error) { return { error: error.message } }
+  })
+  const analysisRequests = {
+    coverage: () => library.analysisCoverage(),
+    pause: async paused => {
+      if (typeof paused !== 'boolean') throw new Error('Pause takes true or false.')
+      writeJSON(analysisSettingsFile, { ...readAnalysisSettings(), paused })
+      await library.pauseAnalysis(paused)
+      return library.status()
+    },
+    restart: async () => {
+      await library.restartAnalysis()
+      return library.analysisCoverage()
+    },
+  }
+  for (const [name, call] of Object.entries(analysisRequests)) ipcMain.handle(`analysis:${name}`, async (event, request) => {
+    trusted(event)
+    try { return { value: await call(request) } } catch (error) { return { error: error.message } }
   })
   // The optional assistant: off until the user opts in, called from here with a key that only this process can read.
   const assistantService = createAssistantService({

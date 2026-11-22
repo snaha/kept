@@ -12,11 +12,7 @@ interface Window {
   // The identity spine (desktop/preload.js). Absent in a browser: device preferences serve instead.
   musicCatalog?: import('../../shared/catalog-bridge').CatalogBridge & { onChange: (callback: () => void) => () => void };
   // Background jobs (desktop/preload.js): playback reports go to the library worker, progress comes back.
-  musicJobs?: {
-    reportPlayback(report: import('./lib/playback-activity').PlaybackReport): void;
-    status(): Promise<import('./lib/jobs.svelte').JobsStatus>;
-    onChange(callback: (status: import('./lib/jobs.svelte').JobsStatus) => void): () => void;
-  };
+  musicJobs?: import('./lib/jobs.svelte').JobsBridge;
   // The optional LLM assistant (desktop/preload.js). The key is kept by the main process; the window only learns that one exists.
   // Spotify, playback only (desktop/preload.js). Tokens stay in the main process.
   musicSpotify?: import('./lib/spotify.svelte').SpotifyBridge;

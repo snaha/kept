@@ -24,6 +24,7 @@ import Grid from './Grid.svelte';
 import App from '../App.svelte';
 import ProfileSettings from './ProfileSettings.svelte';
 import { desktop } from './desktop.svelte';
+import { jobs, setAnalysisHidden } from './jobs.svelte'
 import type { Collection, Track } from './music';
 
 const tile: Collection = { id: 'local:album:a', rawId: 'a', source: 'local', kind: 'album', title: 'Album', sub: 'Artist', cover: '', count: 2, available: true };
@@ -290,6 +291,52 @@ describe('review regressions', () => {
     expect(background.inert).toBe(false); expect(toolbar.inert).toBe(false); expect(empty.inert).toBe(false);
     reset.focus(); expect(document.activeElement).toBe(reset);
   });
+  it('isolates the jobs controls under Queue, artwork and Settings, and Hide focuses library search without scrolling', async () => {
+    const previousStatus = jobs.status
+    const wasHidden = jobs.analysisHidden
+    jobs.status = { mode: 'idle', classes: { analyse: { queued: 1, running: 0, done: 0, failed: 0 } } }
+    setAnalysisHidden(false)
+    try {
+      render(Grid, { tiles: [tile], onpick: () => {}, hidden: false })
+      await tick()
+      const pause = document.querySelector<HTMLButtonElement>('[aria-label="Pause analysis"]')!
+      const hide = document.querySelector<HTMLButtonElement>('[aria-label="Hide analysis progress"]')!
+      const expectCovered = async () => {
+        await tick()
+        pause.focus()
+        expect(document.activeElement).not.toBe(pause)
+        hide.focus()
+        expect(document.activeElement).not.toBe(hide)
+      }
+      player.queueOpen = true
+      await expectCovered()
+      player.queueOpen = false
+      await tick()
+      document.querySelector<HTMLButtonElement>('.tile')!.click()
+      await expectCovered()
+      library.details = undefined
+      player.view = 'settings'
+      await expectCovered()
+      player.view = ''
+      await tick()
+
+      const search = document.querySelector<HTMLInputElement>('[aria-label="Search library"]')!
+      const focus = vi.spyOn(search, 'focus')
+      hide.focus()
+      expect(document.activeElement).toBe(hide)
+      hide.click()
+      await tick()
+      expect(document.activeElement).toBe(search)
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+      expect(hide.isConnected).toBe(false)
+    } finally {
+      jobs.status = previousStatus
+      setAnalysisHidden(wasHidden)
+      player.queueOpen = false
+      player.view = ''
+      library.details = undefined
+    }
+  })
   it('keeps the library and details interactive while non-modal shortcuts are open', async () => {
     render(Grid, { tiles: [tile], onpick: () => {}, hidden: false });
     player.shortcutsOpen = true; await tick();

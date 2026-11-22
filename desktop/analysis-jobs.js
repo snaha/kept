@@ -36,6 +36,10 @@ export function createAnalysis({ catalog, features, folders, ffmpeg, modelDir, m
     const location = asset.locations.find(candidate => candidate.availability === 'available' && folderOf.has(candidate.sourceId))
     return location && path.join(folderOf.get(location.sourceId), ...location.path.split('/'))
   }
+  const hasFile = asset => {
+    const file = fileOf(asset)
+    return !!file && exists(file)
+  }
   const sourceOf = asset => asset.locations.find(candidate => candidate.availability === 'available' && roots().has(candidate.sourceId))?.sourceId
   const aggregate = async albumId => {
     const { album } = await catalog.getAlbum({ albumId })
@@ -53,8 +57,7 @@ export function createAnalysis({ catalog, features, folders, ffmpeg, modelDir, m
       if (!asset) return { assetId, ...key, outcome: 'gone' }
       if (!asset.analysisAllowed) return refusal(assetId)
       // A file that is not there now (a drive unplugged since the scan) waits for the next sweep. It is not unreadable.
-      const file = fileOf(asset)
-      if (!file || !exists(file)) return { assetId, ...key, outcome: 'unavailable' }
+      if (!hasFile(asset)) return { assetId, ...key, outcome: 'unavailable' }
       return undefined
     },
     async prepare(job) {
@@ -112,8 +115,41 @@ export function createAnalysis({ catalog, features, folders, ffmpeg, modelDir, m
     return stats
   }
 
+  // How much of the collection this method version has heard, from the catalog as it is now. Read-only.
+  // tracks: the ones that may be analysed. analysed + unreadable + unavailable + waiting = tracks.
+  async function coverage() {
+    const counts = { tracks: 0, analysed: 0, unreadable: 0, unavailable: 0, waiting: 0, refused: 0 }
+    let after
+    do {
+      const page = await catalog.analysisCandidates({ after, limit: CANDIDATE_PAGE })
+      const allowed = page.assets.filter(asset => asset.analysisAllowed)
+      counts.refused += page.assets.length - allowed.length
+      const { assets } = allowed.length ? await features.assetOutcomes({ ...key, assetIds: allowed.map(asset => asset.assetId) }) : { assets: [] }
+      const outcomes = new Map(assets.map(asset => [asset.assetId, asset.outcome]))
+      for (const asset of allowed) {
+        counts.tracks++
+        const outcome = outcomes.get(asset.assetId)
+        if (outcome === 'done') counts.analysed++
+        else if (outcome === 'unreadable') counts.unreadable++
+        else if (!hasFile(asset)) counts.unavailable++
+        else counts.waiting++
+      }
+      after = page.next
+    } while (after !== undefined)
+    return { ...counts, ready: !missing, missing: missing || undefined }
+  }
+
   return {
-    method, jobClass, ready: !missing, missing,
+    method, jobClass, ready: !missing, missing, coverage,
+    // Forgets every sound it has heard and listens to the whole collection again. Similar albums and
+    // sound traits come back as tracks are analysed again.
+    async restart(worker, onPurged) {
+      // Let any scan sweep finish before clearing its results. The service holds off new sweeps.
+      await running
+      await features.pruneMethods({ keep: [] })
+      onPurged?.()
+      return sweepOnce(worker)
+    },
     // One sweep at a time. A sweep asked for while one runs is run once more after it.
     sweep(worker, signal) {
       if (running) { again = true; return running }

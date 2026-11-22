@@ -44,6 +44,7 @@ export class LibraryWorker {
     this.onProgress = onProgress
     this.onError = onError
     this.running = new Map()
+    this.paused = new Set()
     this.waiters = new Map()
     this.executors = new Map()
     this.finished = {}
@@ -127,11 +128,13 @@ export class LibraryWorker {
         if (snapshot.mode !== 'hold') await this.shed(snapshot.concurrency)
         const room = snapshot.concurrency - this.running.size
         const claimed = await this.claim(Math.max(0, room))
-        if (this.stopped) {
-          for (const job of claimed.jobs) await this.store.releaseJob({ id: job.id, owner: this.owner, now: this.now() })
-          return
+        const releases = []
+        for (const job of claimed.jobs) {
+          if (this.stopped || this.paused.has(job.class)) releases.push(this.store.releaseJob({ id: job.id, owner: this.owner, now: this.now() }))
+          else this.execute(job)
         }
-        for (const job of claimed.jobs) this.execute(job)
+        if (releases.length) await Promise.all(releases)
+        if (this.stopped) return
         if (claimed.waitMs !== undefined) waitMs = Math.min(waitMs ?? Infinity, claimed.waitMs)
         this.nextWake = waitMs
       } while (this.again && !this.stopped)
@@ -151,18 +154,38 @@ export class LibraryWorker {
     for (const entry of excess) await this.releaseRunning(entry)
   }
 
+  // A paused class keeps its queue but claims nothing; its running jobs go back without losing an attempt.
+  async setClassPaused(name, paused) {
+    if (!this.classes.has(name)) throw new Error(`Unknown job class: ${name}`)
+    if (paused) {
+      this.paused.add(name)
+      await this.interruptClass(name)
+    } else if (this.paused.delete(name)) this.wake()
+    else return
+    this.progress()
+  }
+
   async interruptClass(name) {
     const jobs = [...this.running.values()].filter(entry => entry.job.class === name)
     await Promise.all(jobs.map(entry => this.releaseRunning(entry)))
     this.wake()
   }
 
-  async releaseRunning(entry) {
+  releaseRunning(entry) {
+    if (entry.releasing) return entry.releasing
     this.lose(entry)
     clearInterval(entry.lease)
-    this.running.delete(entry.job.id)
-    await entry.checkpoints
-    await this.store.releaseJob({ id: entry.job.id, owner: this.owner, now: this.now() }).catch(() => {})
+    entry.releasing = (async () => {
+      try {
+        await entry.checkpoints
+        // Writes that already started must finish before this lease can be used again.
+        await entry.writing?.catch(() => {})
+        await this.store.releaseJob({ id: entry.job.id, owner: this.owner, now: this.now() })
+      } finally {
+        if (this.running.get(entry.job.id) === entry) this.running.delete(entry.job.id)
+      }
+    })()
+    return entry.releasing
   }
 
   // A class with a concurrency of its own is claimed apart, so it never takes more than its share.
@@ -170,7 +193,9 @@ export class LibraryWorker {
     const busy = new Map()
     for (const { job } of this.running.values()) busy.set(job.class, (busy.get(job.class) ?? 0) + 1)
     const open = [], capped = []
-    for (const definition of this.classes.values()) (definition.concurrency === undefined ? open : capped).push(definition)
+    for (const definition of this.classes.values()) {
+      if (!this.paused.has(definition.name)) (definition.concurrency === undefined ? open : capped).push(definition)
+    }
     const request = { owner: this.owner, leaseMs: this.leaseMs, now: this.now() }
     const claimed = await this.store.claimJobs({ ...request, classes: open.map(definition => definition.name), limit: room })
     const jobs = [...claimed.jobs]
@@ -187,7 +212,8 @@ export class LibraryWorker {
 
   async liveJobs() {
     const { counts } = await this.store.jobCounts()
-    return Object.values(counts).reduce((sum, state) => sum + (state.queued ?? 0) + (state.leased ?? 0), 0)
+    // A paused class's queue waits for the user, not the clock.
+    return Object.entries(counts).filter(([name]) => !this.paused.has(name)).reduce((sum, [, state]) => sum + (state.queued ?? 0) + (state.leased ?? 0), 0)
   }
 
   pushGate(snapshot) {
@@ -227,9 +253,12 @@ export class LibraryWorker {
         })
         await entry.checkpoints
         if (entry.lost || this.stopped) return
-        await definition.commit?.(job, result, this.store)
+        entry.writing = Promise.resolve(definition.commit?.(job, result, this.store))
+        await entry.writing
+        if (entry.lost || this.stopped) return
         const kept = definition.receipt ? definition.receipt(result) : result
-        if ((await this.store.completeJob({ id: job.id, owner: this.owner, result: kept, now: this.now() })).ok) {
+        entry.writing = this.store.completeJob({ id: job.id, owner: this.owner, result: kept, now: this.now() })
+        if ((await entry.writing).ok) {
           this.count(job.class, 'done')
           this.settle(job.id, 'resolve', kept)
         }
@@ -237,7 +266,8 @@ export class LibraryWorker {
         await entry.checkpoints
         if (entry.lost || this.stopped) return
         const message = error?.message ?? String(error)
-        const failure = await this.store.failJob({ id: job.id, owner: this.owner, error: message, now: this.now() }).catch(() => ({ ok: false }))
+        entry.writing = this.store.failJob({ id: job.id, owner: this.owner, error: message, now: this.now() }).catch(() => ({ ok: false }))
+        const failure = await entry.writing
         if (failure.ok && failure.state === 'failed') {
           this.count(job.class, 'failed')
           this.settle(job.id, 'reject', new Error(message))
@@ -245,7 +275,7 @@ export class LibraryWorker {
         if (failure.ok) this.onError?.(new Error(`${job.class} ${job.subject}: ${message}`), { job, retry: failure.state === 'queued' })
       } finally {
         clearInterval(entry.lease)
-        if (this.running.get(job.id) === entry) this.running.delete(job.id)
+        if (!entry.releasing && this.running.get(job.id) === entry) this.running.delete(job.id)
         this.wake()
       }
     })()
@@ -283,7 +313,7 @@ export class LibraryWorker {
     }
     const live = Object.values(classes).some(entry => entry.queued + entry.running > 0)
     if (!live) this.finished = {}
-    return { mode: this.policy.snapshot().mode, classes }
+    return { mode: this.policy.snapshot().mode, classes, paused: [...this.paused] }
   }
   progress() {
     if (!this.onProgress) return

@@ -7,6 +7,7 @@
   import LookupToggle from './lookup-toggle.svelte';
   import AssistantSettings from './assistant-settings.svelte';
   import SpotifySettings from './spotify-settings.svelte';
+  import AnalysisSettings from './analysis-settings.svelte';
   import { assistantAvailable } from './assistant.svelte';
   import { consent, setLookupConsent } from './consent.svelte';
   import ActivityPanel from './activity-panel.svelte';
@@ -30,6 +31,8 @@
     { id: 'appearance', label: 'Appearance' },
     { id: 'advanced', label: 'Advanced' },
     // The change ledger lives in the desktop library, so there is nothing to list in a browser.
+    // Sound analysis runs in the desktop app's background worker.
+    ...(window.musicJobs ? [{ id: 'analysis', label: 'Analysis' }] : []),
     ...(window.musicCatalog ? [{ id: 'activity', label: 'Activity' }] : []),
     { id: 'notices', label: 'Licences' }
   ];
@@ -168,6 +171,8 @@
           </details>
         </section>
 
+      {:else if activeTab === 'analysis'}
+        <AnalysisSettings />
       {:else if activeTab === 'activity'}
         <ActivityPanel entries={activity.entries} onundo={undo} />
         {#if activity.error}<p class="err" role="alert">{activity.error}</p>{/if}
