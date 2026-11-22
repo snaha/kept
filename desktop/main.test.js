@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mainHarness, until } from './tests/main-harness.mjs';
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import os from 'node:os'
 
 const HTTP_OK = 200
 const HTTP_BAD_REQUEST = 400
@@ -116,3 +117,15 @@ test('main cleans up a partially completed start and trusted IPC rejects subfram
     await assert.rejects(status(subframe), /only in Kept/);
   } finally { await dispose(); }
 });
+
+test('a launch that cannot pick a profile keeps Electron out of the default Kept folder', async () => {
+  const { state, dispose } = await mainHarness({ launchFailure: 'Kept could not finish moving its data' })
+  try {
+    assert.equal(state.fatal, 'Kept could not finish moving its data')
+    assert.ok(state.paths.userData?.startsWith(path.join(os.tmpdir(), 'kept-launch-')), 'Electron stores this launch in a throwaway folder')
+    assert.equal(state.paths.sessionData, state.paths.userData)
+  } finally {
+    await dispose()
+    if (state.paths.userData) await rm(state.paths.userData, { recursive: true, force: true })
+  }
+})

@@ -19,4 +19,4 @@ Only approve a build you trust. Do not disable Gatekeeper globally.
 Apple's instructions: https://support.apple.com/en-us/102445
 
 Kept Preview uses separate data from the regular Kept app.
-Existing Music data (or Music Preview data) is retained after the rename.
+Existing Music (or Music Preview) data moves to a Kept (or Kept Preview) folder on first launch.

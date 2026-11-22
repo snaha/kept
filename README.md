@@ -114,12 +114,13 @@ Turn **native window frame** on or off under **Settings → Advanced**, reached 
 Quit the app and delete its data folder. It holds only the app's own index, settings and passwords, never
 your music files.
 
-The Kept rename deliberately preserves the original `Music` data directories.
-
 | System | Data folder |
 |---|---|
-| macOS | `~/Library/Application Support/Music/navidrome` |
-| Linux | `~/.config/Music/navidrome` |
+| macOS | `~/Library/Application Support/Kept` |
+| Linux | `~/.config/Kept` |
+
+Older versions kept their data in a `Music` folder there. The first launch of a newer version moves Kept's files to
+`Kept` and leaves the rest: on macOS, Apple Music also uses `~/Library/Application Support/Music`.
 
 The next start reads your collection from scratch. Share links and QR codes change, so phones need to scan
 the new code.

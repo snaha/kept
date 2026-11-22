@@ -1,7 +1,7 @@
 # App-owned listening history
 
 Music owns `music.sqlite` in Electron's userData directory (normally
-`~/Library/Application Support/Music/music.sqlite` on macOS). Navidrome's
+`~/Library/Application Support/Kept/music.sqlite` on macOS). Navidrome's
 library database remains separate. The database is
 opened only by a worker thread; the renderer uses a restricted preload bridge.
 Production history is not exposed through the LAN frontend server.

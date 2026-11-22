@@ -4,7 +4,7 @@ import { MusicDatabase } from './music-database.js';
 import { closeFrontend, isMusicDocument, listenFrontend, stopMusicServer } from './service-lifecycle.js';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import { createServer } from 'node:net';
 import os from 'node:os';
@@ -39,7 +39,15 @@ try {
     config = loadProfile(profile, app.getPath('music'));
     rememberProfile(profile);
   }
-} catch (error) { launchError = error.message; }
+} catch (error) {
+  launchError = error.message;
+  // Without a profile, Electron would create its default folder, Kept, which a later launch would take for real data.
+  if (app.getPath('userData') !== profile?.directory) {
+    const scratch = mkdtempSync(path.join(os.tmpdir(), 'kept-launch-'));
+    app.setPath('userData', scratch);
+    app.setPath('sessionData', scratch);
+  }
+}
 app.on('second-instance', () => {
   const win = BrowserWindow.getAllWindows().find(window => window.isVisible());
   if (win?.isMinimized()) win.restore();
